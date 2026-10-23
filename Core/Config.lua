@@ -188,6 +188,13 @@ Config.defaults = {
 				clickTarget = true,
 			},
 
+			-- The raid: the weave, every member as a cell (raid build phase 1).
+			-- Blizzard's raid frames go while it is on.
+			raidframes = {
+				enabled      = true,
+				hideBlizzard = true,
+			},
+
 			-- The class resource tray under the player capsule: combo points
 			-- on Era and Forever, the rest of the Mists table where a client
 			-- reports it.

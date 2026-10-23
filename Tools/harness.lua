@@ -2596,6 +2596,11 @@ CompactPartyFrame.__protected = true
 -- panel is what replaces it.
 CompactRaidFrameManager = CreateFrame("Frame", "CompactRaidFrameManager", UIParent)
 CompactRaidFrameManager.__protected = true
+-- The raid frames themselves: parented to UIParent on Forever, to the manager
+-- on Era (Classic/Blizzard_CompactRaidFrameManager.lua:23) - though Joe saw
+-- them on screen on both (2026-10-23), so the weave banishes this one too.
+CompactRaidFrameContainer = CreateFrame("Frame", "CompactRaidFrameContainer", UIParent)
+CompactRaidFrameContainer.__protected = true
 
 _G.__unitWatched = {}
 function RegisterUnitWatch(f)
@@ -7352,7 +7357,94 @@ function UnitIsFriend(a, b)
 	return (ub and ub.reaction and ub.reaction >= 4) or false
 end
 function UnitIsDead(u) return (units[u] and units[u].hp == 0) or false end
-function IsInRaid() return false end
+
+-- A RAID, modelled: _G.__raidRoster = { { unit = "raid1", subgroup = 1 }, ... }
+-- with _G.__inRaid true, the units themselves in __units like any other.
+_G.__raidRoster = {}
+function IsInRaid() return _G.__inRaid == true end
+local partyMembers = GetNumGroupMembers
+function GetNumGroupMembers()
+	if _G.__inRaid then return #_G.__raidRoster end
+	return partyMembers()
+end
+function GetRaidRosterInfo(i)
+	local r = _G.__raidRoster[i]
+	if not r then return nil end
+	local d = units[r.unit] or {}
+	return d.name, 0, r.subgroup, d.level, d.class, d.classToken, nil,
+		d.exists ~= false, d.dead
+end
+
+-- THE CLIENT'S GROUP HEADER (SecureGroupHeaders.lua), held to its source:
+--   - it works only while VISIBLE: an attribute set or a roster change on a
+--     hidden header does nothing (:61, :70);
+--   - it makes as many children as unitCount - (startingIndex - 1), at least
+--     one, named <header>UnitButton<i>, kept as attribute child<i>
+--     (:137-170 on Era, :141-174 on Forever);
+--   - it hands each child a unit from the sorted list, or none, and shows or
+--     hides it - from secure code, so in a fight too - firing the child's
+--     OnAttributeChanged as it goes.
+-- initialConfigFunction is restricted code and is not run here; the cell size
+-- our snippet sets is copied from the header's cellW/cellH, as it reads them.
+_G.__groupHeaders = {}
+local headerBase = CreateFrame
+function _G.__updateHeader(h)
+	local list = {}
+	if IsInRaid() and h:GetAttribute("showRaid") then
+		local filter = {}
+		for g in tostring(h:GetAttribute("groupFilter") or ""):gmatch("%d+") do
+			filter[tonumber(g)] = true
+		end
+		for _, r in ipairs(_G.__raidRoster) do
+			if not next(filter) or filter[r.subgroup] then list[#list + 1] = r.unit end
+		end
+	end
+	local start = h:GetAttribute("startingIndex") or 1
+	local per = h:GetAttribute("unitsPerColumn")
+	local numDisplayed = #list - (start - 1)
+	if per then numDisplayed = math.min(numDisplayed, per * (h:GetAttribute("maxColumns") or 1)) end
+	local need = math.max(1, numDisplayed)
+	for i = 1, need do
+		if not h.__attrs["child" .. i] then
+			local name = h:GetName()
+			local b = headerBase("Button", name and (name .. "UnitButton" .. i), h,
+				h:GetAttribute("template"))
+			b:SetSize(h:GetAttribute("cellW") or 0, h:GetAttribute("cellH") or 0)
+			h.__attrs["child" .. i] = b
+		end
+	end
+	local i = 1
+	while h.__attrs["child" .. i] do
+		local b = h.__attrs["child" .. i]
+		local idx = start - 1 + i
+		local unit = (i <= numDisplayed and idx >= 1) and list[idx] or nil
+		b.__attrs.unit = unit
+		local fn = b.__scripts and b.__scripts.OnAttributeChanged
+		if fn then fn(b, "unit", unit) end
+		_G.__secureExec = true
+		if unit then b:Show() else b:Hide() end
+		_G.__secureExec = nil
+		i = i + 1
+	end
+end
+function _G.__updateHeaders()
+	for _, h in ipairs(_G.__groupHeaders) do
+		if h:IsVisible() then _G.__updateHeader(h) end
+	end
+end
+function CreateFrame(kind, name, parent, template)
+	local f = headerBase(kind, name, parent, template)
+	if template and tostring(template):find("SecureGroupHeaderTemplate") then
+		f.__groupHeader = true
+		local set = f.SetAttribute
+		function f:SetAttribute(k, v)
+			set(self, k, v)
+			if k ~= "_ignore" and self:IsVisible() then _G.__updateHeader(self) end
+		end
+		_G.__groupHeaders[#_G.__groupHeaders + 1] = f
+	end
+	return f
+end
 function GetShapeshiftForm() return _G.__shapeshiftForm or 0 end
 
 -- THE THREAT TABLE, and it is EMPTY unless something puts a unit on it.
@@ -7849,6 +7941,7 @@ local FILES = {
 	"Core/Trunk.lua", "Core/Mail.lua", "Core/Nav.lua", "Core/Launchers.lua",
 	"Core/Commands.lua", "Core/Options.lua", "Core/OptionsControls.lua", "Core/OptionsWindow.lua",
 	"Modules/UnitFrames.lua", "Modules/Resources.lua", "Modules/PartyFrames.lua",
+	"Modules/RaidFrames.lua",
 	"Modules/ActionBars.lua", "Modules/Auras.lua",
 	"Modules/QuestTracker.lua", "Modules/QuestLog.lua", "Modules/Bags.lua",
 	"Modules/Minimap.lua", "Modules/XPBar.lua",
@@ -19620,6 +19713,10 @@ do
 			-- of its own. The presets are shared with Era, which has no focus,
 			-- and a preset naming one could never match there.
 			focus = true,
+			-- The raid weave (raid build phase 1, 2026-10-23): on a default of
+			-- its own until the group bond (phase 2) says where it hangs, and
+			-- only ever up in a raid, which no preset has been drawn for.
+			raid = true,
 		}
 
 		local named = {}
@@ -36041,6 +36138,155 @@ section("raid groundwork: one container builder, health and range unread", funct
 			"not measured is not far away: a unit the client does not check stays up")
 	end
 	_G.__units.raid1 = saved
+end)
+
+section("raid frames: the weave", function()
+	-- PHASE 1 OF THE RAID BUILD (2026-10-23): every member a cell, in one
+	-- look. The header stand-in hands units out as the client's does; after a
+	-- roster change the test runs it, as the client's own GROUP_ROSTER_UPDATE
+	-- and OnShow handlers would.
+	local RF = A:GetModule("raidframes")
+	check(RF.enabled and RF.weave and #RF.headers == 8, "eight group headers, one weave")
+
+	-- ALL FORTY CELLS AT LOGIN, before anyone is in a raid.
+	local made, dressed = 0, 0
+	for _, h in ipairs(RF.headers) do
+		for i = 1, 5 do
+			local cell = h:GetAttribute("child" .. i)
+			if cell then
+				made = made + 1
+				if cell.dressed then dressed = dressed + 1 end
+			end
+		end
+	end
+	check(made == 40 and dressed == 40,
+		"all forty cells are made and dressed out of combat, before a raid ("
+		.. made .. " made, " .. dressed .. " dressed)")
+	check(RF.headers[1]:GetAttribute("startingIndex") == 1,
+		"and the headers are back to starting at the first unit")
+	local cfgFn = RF.headers[1]:GetAttribute("initialConfigFunction") or ""
+	check(cfgFn:find('"*type1", "target"', 1, true) and cfgFn:find('"*type2", "togglemenu"', 1, true),
+		"each cell targets on a left click and opens the unit menu on a right,"
+		.. " set by the client as it makes the cell")
+
+	-- A RAID OF TWELVE: groups 1 and 2 full, two in group 3.
+	local saved = {}
+	local CLASSES = { { "Warrior", "WARRIOR" }, { "Priest", "PRIEST" }, { "Mage", "MAGE" } }
+	wipe(_G.__raidRoster)
+	for i = 1, 12 do
+		local u = "raid" .. i
+		saved[u] = _G.__units[u]
+		local cl = CLASSES[(i % 3) + 1]
+		_G.__units[u] = { exists = true, name = "Member" .. i, level = 60,
+			isPlayer = true, class = cl[1], classToken = cl[2],
+			hp = 100, hpMax = 100, role = (i == 1) and "TANK" or "DAMAGER" }
+		_G.__raidRoster[i] = { unit = u, subgroup = (i <= 5) and 1 or (i <= 10) and 2 or 3 }
+	end
+	local plainRole = UnitGroupRolesAssigned
+	UnitGroupRolesAssigned = function(u)
+		local d = _G.__units[u]
+		if d and d.role then return d.role end
+		return plainRole(u)
+	end
+	_G.__inRaid = true
+	_G.__resolveStateDrivers()
+	fire("GROUP_ROSTER_UPDATE")
+	_G.__updateHeaders()
+
+	check(RF.weave:IsShown(), "in a raid the weave is up")
+	local A1 = RF.headers[1]:GetAttribute("child1")
+	local C3 = RF.headers[3]:GetAttribute("child3")
+	check(A1.unit == "raid1" and A1:IsShown()
+		and RF.headers[3]:GetAttribute("child2").unit == "raid12"
+		and not C3:IsShown(),
+		"each group's header hands its members out in order, and an empty slot hides")
+	check(A1.__w == 112 and A1.__h == 30,
+		"twelve in the raid is the 20-man density: 112 x 30 ("
+		.. tostring(A1.__w) .. " x " .. tostring(A1.__h) .. ")")
+	check(RF.labels[3]:IsShown() and not RF.labels[4]:IsShown(),
+		"a group number for each group with anyone in it, and none for the rest")
+	check(A1.name:GetText() == "Member1" and A1.role:GetText() == "T",
+		"a cell carries the name and, for a tank, the T tag")
+	check(RF.headers[1]:GetAttribute("child2").role:GetText() == "",
+		"and DPS carry no tag")
+
+	-- HEALTH: the fill's colour and the low number, by the helpers.
+	_G.__units.raid1.hp = 30
+	fire("UNIT_HEALTH", "raid1")
+	if _G.__flavour == "camelot" then
+		check(issecretvalue(A1.fill:GetStatusBarTexture().__color[1])
+			and issecretvalue(A1.low:GetText()),
+			"Forever: the fill colour and the number are the client's, unread")
+	else
+		check(A1.low:GetText() == "30", "Era: below 40% the number shows ("
+			.. tostring(A1.low:GetText()) .. ")")
+	end
+
+	-- DEAD: no fill, the name struck through.
+	_G.__units.raid1.dead = true
+	fire("UNIT_HEALTH", "raid1")
+	check(not A1.fill:IsShown() and A1.strike:IsShown(), "dead: no fill, the name struck through")
+	_G.__units.raid1.dead = false
+	fire("UNIT_HEALTH", "raid1")
+	check(A1.fill:IsShown() and not A1.strike:IsShown(), "and back when they are up")
+
+	-- THREAT: pulling takes the danger edge.
+	local plainThreat = UnitThreatSituation
+	UnitThreatSituation = function(u) return u == "raid1" and 1 or 0 end
+	fire("UNIT_THREAT_SITUATION_UPDATE", "raid1")
+	check(A1._edgeColor == A.Palette.c.danger, "pulling threat edges the cell in the danger colour")
+	UnitThreatSituation = plainThreat
+	fire("UNIT_THREAT_SITUATION_UPDATE", "raid1")
+	check(A1._edgeToken == "glassEdge", "and the rim is the glass's own again after")
+
+	-- DISPELLABLE DEBUFFS: the client's icons on Forever, ours on Era.
+	if _G.__flavour == "camelot" then
+		check(A1.auras and A1.auras.__unit == "raid1"
+			and A1.auras.__groups.dispel and A1.auras.__groups.dispel.filter == "HARMFUL|RAID",
+			"Forever: each cell's container shows what you can dispel, bound to its member")
+	else
+		_G.__auras.raid1 = { HARMFUL = {
+			{ "Curse of Weakness", 136138, 0, "Curse", 10, nil, "boss1", false, nil, true },
+			{ "Rend", 132155, 0, nil, 10, nil, "boss1", false, nil, false },
+		} }
+		fire("UNIT_AURA", "raid1")
+		check(A1.icons[1]:IsShown() and A1.icons[1]:GetTexture() == 136138
+			and not A1.icons[2]:IsShown(),
+			"Era: a debuff you can dispel shows as an icon, one you cannot does not")
+		_G.__auras.raid1 = nil
+	end
+
+	-- IN COMBAT NOTHING MOVES: a roster change waits for the fight to end.
+	_G.__inCombat = true
+	for i = 13, 22 do
+		local u = "raid" .. i
+		saved[u] = _G.__units[u]
+		_G.__units[u] = { exists = true, name = "Member" .. i, isPlayer = true,
+			class = "Mage", classToken = "MAGE", hp = 100, hpMax = 100 }
+		_G.__raidRoster[i] = { unit = u, subgroup = (i <= 15) and 3 or (i <= 20) and 4 or 5 }
+	end
+	fire("GROUP_ROSTER_UPDATE")
+	_G.__updateHeaders()
+	check(RF.pendingLayout and A1.__w == 112,
+		"a raid grown to 22 mid-fight keeps its size until the fight ends")
+	_G.__inCombat = false
+	fire("PLAYER_REGEN_ENABLED")
+	check(not RF.pendingLayout and A1.__w == 96,
+		"and then takes the 25-man density (" .. tostring(A1.__w) .. ")")
+
+	-- BLIZZARD'S RAID FRAMES GO WHILE THE WEAVE IS ON.
+	check(RF.hideReport == "hidden" and not CompactRaidFrameContainer:IsShown(),
+		"Blizzard's raid frames are banished (" .. tostring(RF.hideReport) .. ")")
+
+	-- OUT OF THE RAID, THE WEAVE GOES (the party capsules take over).
+	_G.__inRaid = false
+	wipe(_G.__raidRoster)
+	_G.__resolveStateDrivers()
+	check(not RF.weave:IsShown(), "out of a raid the weave is down")
+
+	UnitGroupRolesAssigned = plainRole
+	for u, d in pairs(saved) do _G.__units[u] = d end
+	fire("GROUP_ROSTER_UPDATE")
 end)
 
 section("threat: one place decides which tier a unit is in", function()

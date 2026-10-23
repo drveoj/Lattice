@@ -646,6 +646,7 @@ L["movers.name.pet"] = "Pet"
 L["movers.name.tot"] = "Target of Target"
 L["movers.name.focus"] = "Focus"
 L["movers.name.party"] = "Party"
+L["movers.name.raid"] = "Raid"
 L["movers.name.chat"] = "Chat"
 L["movers.name.minimap"] = "Minimap"
 L["movers.name.tooltip"] = "Tooltip"
@@ -1380,6 +1381,13 @@ L["options.party_frames.party_frames"] = "Party frames"
 L["options.party_frames.placement"] =
 	"The four slots are fixed and the group moves as one: unlock with "
 		.. "%s and drag any part of the stack."
+L["options.raid_frames.raid_frames"] = "Raid frames"
+L["options.raid_frames.enabled_desc"] =
+	"Everyone in your raid as a glass cell, group by group. Blizzard's raid "
+		.. "frames come back when this is off, after a reload."
+L["options.raid_frames.hide_blizzard"] = "Hide Blizzard's raid frames"
+L["options.raid_frames.placement"] =
+	"The groups move as one: unlock with %s and drag the raid."
 L["options.party_frames.slot_whose_member_has"] =
 	"A slot whose member has gone leaves a gap rather than closing up. "
 		.. "Re-anchoring a frame you can click to target is refused by the "

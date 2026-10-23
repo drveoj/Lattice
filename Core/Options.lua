@@ -1232,6 +1232,18 @@ local function PartyFramesGroup()
 			.. L.options.party_frames.slot_whose_member_has),
 	})
 end
+--- The raid weave. Two controls for now; the full Raid page (lens, pins,
+--  edges, geometry) is phase 6 of the raid build.
+local function RaidFramesGroup()
+	local function at(k) return { "modules", "raidframes", k } end
+	return group(L.options.raid_frames.raid_frames, {
+		enabled = toggle(L.common.enabled,
+			L.options.raid_frames.enabled_desc, at("enabled"), { defaultTrue = true }),
+		hideBlizzard = toggle(L.options.raid_frames.hide_blizzard, nil,
+			at("hideBlizzard")),
+		placement = note(A.F(L.options.raid_frames.placement, A.Hi("/lattice unlock"))),
+	})
+end
 --- Threat. Three controls and no thresholds: the 70 and the 90 are the
 --  handoff's and are deliberately not a setting - a player who moves them is a
 --  player whose ring means something different from everybody else's.
@@ -1256,7 +1268,7 @@ local function ThreatGroup()
 	})
 end
 local PAGE_ORDER = {
-	general = 1, skins = 1.5, unitframes = 2, partyframes = 3, auras = 4, actionbars = 5,
+	general = 1, skins = 1.5, unitframes = 2, partyframes = 3, raidframes = 3.5, auras = 4, actionbars = 5,
 	minimap = 6, world = 6.5, quests = 7, mail = 7.1, tracking = 7.2, calendar = 7.3, nifec = 7.4,
 	bags = 8, chat = 9, tooltips = 10,
 	toolbox = 11, fader = 12, zen = 12.5, xpbar = 13, nameplates = 14, ifec = 15,
@@ -1379,6 +1391,7 @@ function Options:Build()
 			skins = SkinsGroup(),
 			unitframes = UnitFramesGroup(),
 			partyframes = PartyFramesGroup(),
+			raidframes = RaidFramesGroup(),
 			auras = AurasGroup(),
 			minimap = MinimapGroup(),
 			actionbars = ActionBarsGroup(),

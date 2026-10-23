@@ -85,6 +85,7 @@ Modules\Chat.lua
 Modules\Tooltips.lua
 Modules\Nameplates.lua
 Modules\PartyFrames.lua
+Modules\RaidFrames.lua
 Modules\Fonts.lua
 Modules\Menus.lua
 Modules\Conveniences.lua
