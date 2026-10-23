@@ -1804,6 +1804,9 @@ local probeInit = { ran = 0, err = nil }
 local function InitAuraButton(button)
 	probeInit.ran = probeInit.ran + 1
 	local ok, err = pcall(function()
+		-- SIZE FIRST: the engine only anchors its buttons, and an unsized one
+		-- draws nothing (Modules/Auras.lua:1228; EllesmereUI_AuraKit.lua:288).
+		button:SetSize(14, 14)
 		local icon = button:CreateTexture(nil, "ARTWORK")
 		icon:SetAllPoints(button)
 		button:SetIcon(icon)
