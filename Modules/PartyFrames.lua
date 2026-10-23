@@ -895,12 +895,28 @@ local function Tick()
 	for _, f in ipairs(PF.frames) do UpdateAll(f) end
 end
 
+--- IN A RAID, BLIZZARD'S RAID FRAMES AND NOT OUR CAPSULES - the client's own
+--  rule: party frames show in a group and not in a raid (ShouldShowPartyFrames,
+--  GroupFrameVisibility.lua:5-6). Ours showed your subgroup on top of the
+--  raid's grid (Joe, 2026-10-23: "Don't show party frame when we're in
+--  raid"). A driver, not Show and Hide from here: the capsules carry secure
+--  buttons, so our own Hide is refused in a fight - and a party converted to
+--  a raid mid-pull is exactly then. The client's driver runs as secure code.
+local VISIBILITY = "[group:raid] hide; show"
+
+function PF:DriveVisibility()
+	if RegisterStateDriver then
+		RegisterStateDriver(self.stack, "visibility", VISIBILITY)
+	end
+end
+
 function PF:OnEnable()
 	local c = cfg()
 
 	if self.stack then
 		A:RegisterTicker(self, Tick)
 		self.stack:Show()
+		self:DriveVisibility()
 		self:HideBlizzard()
 		self:Layout()
 		self:RegisterMovers()
@@ -925,6 +941,7 @@ function PF:OnEnable()
 		f:SetParent(self.stack)
 		self.frames[i] = f
 	end
+	self:DriveVisibility()
 
 	self:Layout()
 	self:RegisterMovers()
@@ -948,6 +965,8 @@ function PF:OnDisable()
 			f.click:Hide()
 		end
 	end
+	-- The driver first, or its next pass shows the stack again.
+	if UnregisterStateDriver then UnregisterStateDriver(self.stack, "visibility") end
 	self.stack:Hide()
 	if self.panel then self.panel:Hide() end
 	-- The node goes with the module.

@@ -42,6 +42,7 @@ local function usage()
 		A.Hi("/lattice world") .. " retract  ·  the World trunk up into the pill, or back down",
 		A.Hi("/lattice dump") .. " <FrameName>  ·  what a Blizzard frame is made of",
 		A.Hi("/lattice threat") .. " probe  ·  what the threat API answers, in a box you can copy",
+		A.Hi("/lattice probe") .. " <snippet|header>  ·  raid-frame probes: secure snippets, a bare raid header",
 		A.Hi("/lattice resources") .. " demo  ·  step the class resource tray through every class",
 		A.Hi("/lattice ifec") .. " [reset]  ·  content packs, what is playing, forget history",
 		A.Hi("/lattice errors") .. " <diag|clear>  ·  errors, or diag, in a box you can copy out of",
@@ -1715,6 +1716,313 @@ handlers.threat = function(arg)
 		return
 	end
 	A:Print(A.Hi("/lattice threat probe") .. "  ·  what the threat API answers")
+end
+
+--- WHETHER SECURE SNIPPETS RUN on this client: the code a group header, a
+--  pinned raid cell or a lens switch would run in a fight. The Forever beta
+--  shipped without the compiler (loadstring_untainted), so every snippet
+--  failed in silence; the 2026-10-23 dump looks fixed (RestrictedExecution
+--  .lua:22, 79), and nothing of ours has seen one run. A raid-frames probe,
+--  to come out once answered.
+--
+--  Two routes, each judged by what it WROTE rather than by whether it threw -
+--  a snippet that never runs reports no error at all (see the WrapScript
+--  note in project memory). Execute runs a body once; _onattributechanged is
+--  the handler a header's attribute changes go through. Out of combat only:
+--  a secure frame's attributes cannot be set from here in a fight.
+local probeFrames = {}
+
+local function SnippetProbe()
+	local out = {}
+	local function line(s) out[#out + 1] = tostring(s) end
+	line("snippet probe  ·  " .. tostring(A.version) .. "  ·  build "
+		.. tostring((GetBuildInfo())))
+
+	if InCombatLockdown() then
+		line("in combat: run it again out of combat")
+	else
+		local h = probeFrames.exec
+			or CreateFrame("Frame", nil, UIParent, "SecureHandlerBaseTemplate")
+		probeFrames.exec = h
+		h:SetAttribute("probe-out", nil)
+		if type(h.Execute) ~= "function" then
+			line("Execute: no such method on SecureHandlerBaseTemplate")
+		else
+			local ok, err = pcall(h.Execute, h,
+				[[ self:SetAttribute("probe-out", 6 * 7) ]])
+			local got = h:GetAttribute("probe-out")
+			line("Execute: " .. (got == 42 and "RAN" or "DID NOT RUN")
+				.. "  (wrote " .. tostring(got)
+				.. (ok and "" or ("; error " .. tostring(err))) .. ")")
+		end
+
+		local a = probeFrames.attr
+			or CreateFrame("Frame", nil, UIParent, "SecureHandlerAttributeTemplate")
+		probeFrames.attr = a
+		a:SetAttribute("probe-echo", nil)
+		-- A new value each run, so an echo left from the last one cannot pass.
+		local sent = "echo-" .. tostring(GetTime())
+		local ok, err = pcall(function()
+			a:SetAttribute("_onattributechanged", [[
+				if name == "probe-in" then self:SetAttribute("probe-echo", value) end
+			]])
+			a:SetAttribute("probe-in", sent)
+		end)
+		local got = a:GetAttribute("probe-echo")
+		line("_onattributechanged: " .. (got == sent and "RAN" or "DID NOT RUN")
+			.. "  (echoed " .. tostring(got)
+			.. (ok and "" or ("; error " .. tostring(err))) .. ")")
+	end
+
+	local text = table.concat(out, string.char(10))
+	if A.Errors and A.Errors.ShowText then
+		A.Errors:ShowText((A.Errors.Header and A.Errors:Header() or "") .. text)
+	else
+		for _, l in ipairs(out) do A:Print(l) end
+	end
+end
+
+--- A BARE RAID HEADER, to see what the client will do for one of ours: does
+--  a SecureGroupHeaderTemplate built from addon code make a cell for every
+--  member, and does each get the client's own debuff icons through
+--  auraContainerTemplate (SecureGroupHeaders.lua:111-112)? The raid design's
+--  dispel decision rests on the second (2026-10-23). Grey boxes and names, no
+--  styling; a left click targets, a right click opens the unit menu. Run it
+--  again to take it down. Out of combat only: a header's attributes and its
+--  visibility cannot be touched from here in a fight.
+local HEADER_NAME = ADDON .. "ProbeHeader"
+local headerTicker
+
+--- THE ICON, which the engine's aura button does not have. CustomAuraButton
+--  Template is two mixins and no regions: a button draws only what it is
+--  handed through SetIcon and its siblings (Blizzard_CustomAuraButton.lua:
+--  243), once, as it is made. Without this the containers filled and drew
+--  nothing - three runs of empty boxes (Joe, 2026-10-23). EllesmereUI does the
+--  same in its initializeFrame (EllesmereUI_AuraKit.lua:1189-1225).
+local probeInit = { ran = 0, err = nil }
+
+local function InitAuraButton(button)
+	probeInit.ran = probeInit.ran + 1
+	local ok, err = pcall(function()
+		local icon = button:CreateTexture(nil, "ARTWORK")
+		icon:SetAllPoints(button)
+		button:SetIcon(icon)
+	end)
+	if not ok then probeInit.err = tostring(err) end
+end
+
+--- What one cell's container is actually doing, every answer guarded: a
+--  secret or a refused call is reported as such, never compared.
+local function Said(fn, ...)
+	local ok, v = pcall(fn, ...)
+	if not ok then return "error: " .. tostring(v) end
+	if A.IsSecret(v) then return "secret" end
+	return tostring(v)
+end
+
+local function ContainerReport(cell)
+	local c = cell.probeOwn
+	if not c then return "no container of ours: " .. tostring(cell.probeOwnErr) end
+	local parts = {
+		"shown=" .. Said(c.IsShown, c),
+		"visible=" .. Said(c.IsVisible, c),
+		"enabled=" .. (c.IsEnabled and Said(c.IsEnabled, c) or "n/a"),
+		"unit=" .. (c.GetUnit and Said(c.GetUnit, c) or "n/a"),
+		"w=" .. Said(c.GetWidth, c) .. " h=" .. Said(c.GetHeight, c),
+	}
+	for _, key in ipairs({ "buffs", "debuffs" }) do
+		local n = c.GetAuraGroupFrameCount and Said(c.GetAuraGroupFrameCount, c, key) or "n/a"
+		local first = c.GetAuraGroupFrame and select(2, pcall(c.GetAuraGroupFrame, c, key, 1))
+		local firstShown = (type(first) == "table" and first.IsShown)
+			and Said(first.IsShown, first) or "none"
+		parts[#parts + 1] = key .. ": frames=" .. n .. " first shown=" .. firstShown
+	end
+	parts[#parts + 1] = "setEnabled=" .. tostring(cell.probeEnabled)
+		.. " refresh=" .. tostring(cell.probeRefresh)
+		.. " layout: " .. tostring(cell.probeLayout)
+	return table.concat(parts, "  ")
+end
+
+local function DressCell(cell)
+	if not cell.probeName then
+		local bg = cell:CreateTexture(nil, "BACKGROUND")
+		bg:SetAllPoints(cell)
+		bg:SetColorTexture(0.1, 0.1, 0.12, 0.85)
+		cell.probeName = cell:CreateFontString(nil, "OVERLAY", "GameFontHighlightSmall")
+		cell.probeName:SetPoint("TOPLEFT", cell, "TOPLEFT", 3, -3)
+	end
+	-- OUR OWN CONTAINER, not the header's. EllesmereUI sets
+	-- auraContainerTemplate too (EUI_RaidFrames_Layout.lua:85), but the
+	-- containers that draw are ones it builds on each button
+	-- (EUI_RaidFrames_AuraContainers.lua:2522, EllesmereUI_AuraKit.lua:1571-
+	-- 1578). The header's stayed 1x1 through seven runs (Joe, 2026-10-23).
+	if not cell.probeOwn then
+		if C_AddOns and C_AddOns.IsAddOnLoaded
+			and not C_AddOns.IsAddOnLoaded("Blizzard_AuraContainer") then
+			C_AddOns.LoadAddOn("Blizzard_AuraContainer")
+		end
+		local ok, made = pcall(CreateFrame, "AuraContainer", nil, cell,
+			"CustomAuraContainerTemplate")
+		cell.probeOwn = ok and made or false
+		cell.probeOwnErr = (not ok) and tostring(made) or nil
+	end
+	local c = cell.probeOwn or nil
+	if c and not cell.probeGroup then
+		-- ANCHOR AND SIZE FIRST, groups after - EllesmereUI's order. Adding a
+		-- group forbids untrusted layout on the container (AddForbiddenAspects
+		-- (UntrustedLayoutScriptExecution)), and resizing it from here
+		-- afterwards left it at 1x1 with the layout pass never run: every
+		-- button made, none placed (Joe's fifth run, 2026-10-23).
+		c:ClearAllPoints()
+		c:SetPoint("BOTTOMRIGHT", cell, "BOTTOMRIGHT", -2, 2)
+		-- A RECT FROM THE START: the engine lays out from an OnUpdate that
+		-- only runs while the container is renderable, and it replaces this
+		-- size itself. EllesmereUI_AuraKit.lua:1580-1587.
+		c:SetSize(1, 1)
+		-- THE ROW WIDTH, which EllesmereUI always sets (nil = unlimited,
+		-- EllesmereUI_AuraKit.lua:1534-1538) and the probe never did. A zero
+		-- default would fit no button on any row: still 1x1 at 36 cells, with
+		-- every button made (Joe's sixth run, 2026-10-23).
+		local said = {}
+		local function try(name, ...)
+			local f = c[name]
+			if not f then said[#said + 1] = name .. "=no method" return end
+			local ok, err = pcall(f, c, ...)
+			said[#said + 1] = name .. "=" .. (ok and "ok" or tostring(err))
+		end
+		if c.SetFlowLayoutMaximumLineSize then try("SetFlowLayoutMaximumLineSize", nil)
+		else try("SetAuraLayoutRowWidth", nil) end
+		if c.SetFlowLayoutAnchorPoint then try("SetFlowLayoutAnchorPoint", "BOTTOMRIGHT")
+		else try("SetAuraLayoutAnchorPoint", "BOTTOMRIGHT") end
+		cell.probeLayout = table.concat(said, " ")
+		cell.probeGroup = pcall(c.AddAuraGroup, c, "debuffs", "HARMFUL",
+			{ maxFrameCount = 3, initializeFrame = InitAuraButton,
+				layout = { elementWidth = 14, elementHeight = 14, elementSpacing = 1 } })
+		-- BUFFS TOO, as a control: nearly everyone carries one, so an empty
+		-- box with buffs asked for means the container is not drawing at all,
+		-- rather than that nobody had a debuff (Joe's second run, 2026-10-23).
+		cell.probeBuffs = pcall(c.AddAuraGroup, c, "buffs", "HELPFUL",
+			{ maxFrameCount = 3, initializeFrame = InitAuraButton,
+				layout = { elementWidth = 14, elementHeight = 14, elementSpacing = 1 } })
+		if c.SetEnabled then
+			local ok, err = pcall(c.SetEnabled, c, true)
+			cell.probeEnabled = ok and "ok" or tostring(err)
+		else
+			cell.probeEnabled = "no method"
+		end
+	end
+	local unit = cell:GetAttribute("unit")
+	if unit then
+		cell.probeName:SetText(UnitName(unit) or unit)
+		if c and c.SetUnit then
+			c:SetUnit(unit)
+			-- And a full refresh once bound (EllesmereUI_AuraKit.lua:2045-2047).
+			if c.UpdateAllAuras then
+				local ok, err = pcall(c.UpdateAllAuras, c)
+				cell.probeRefresh = ok and "ok" or tostring(err)
+			end
+		end
+	end
+end
+
+local function HeaderCells()
+	local cells = {}
+	for i = 1, 40 do
+		local cell = _G[HEADER_NAME .. "UnitButton" .. i]
+		if not cell then break end
+		cells[#cells + 1] = cell
+	end
+	return cells
+end
+
+local function HeaderProbe()
+	local out = {}
+	local function line(s) out[#out + 1] = tostring(s) end
+	line("header probe  ·  " .. tostring(A.version) .. "  ·  build "
+		.. tostring((GetBuildInfo())))
+
+	local h = _G[HEADER_NAME]
+	if InCombatLockdown() then
+		line("in combat: run it again out of combat")
+	elseif h and h:IsShown() then
+		if headerTicker then headerTicker:Cancel() headerTicker = nil end
+		h:Hide()
+		line("taken down")
+	else
+		if not h then
+			h = CreateFrame("Frame", HEADER_NAME, UIParent, "SecureGroupHeaderTemplate")
+			h:SetPoint("TOPLEFT", UIParent, "TOPLEFT", 420, -160)
+			h:SetAttribute("template", "SecureUnitButtonTemplate")
+			h:SetAttribute("auraContainerTemplate", "CustomAuraContainerTemplate")
+			h:SetAttribute("initialConfigFunction", [[
+				self:SetWidth(84)
+				self:SetHeight(30)
+				self:SetAttribute("*type1", "target")
+				self:SetAttribute("*type2", "togglemenu")
+			]])
+			h:SetAttribute("showRaid", true)
+			h:SetAttribute("showParty", true)
+			h:SetAttribute("showPlayer", true)
+			h:SetAttribute("groupBy", "GROUP")
+			h:SetAttribute("groupingOrder", "1,2,3,4,5,6,7,8")
+			h:SetAttribute("maxColumns", 8)
+			h:SetAttribute("unitsPerColumn", 5)
+			h:SetAttribute("columnSpacing", 4)
+			h:SetAttribute("yOffset", -2)
+			h:SetAttribute("point", "TOP")
+			h:SetAttribute("columnAnchorPoint", "LEFT")
+		end
+		h:Show()
+
+		local cells = HeaderCells()
+		local withAuras, grouped, buffed = 0, 0, 0
+		for _, cell in ipairs(cells) do
+			DressCell(cell)
+			if cell.AuraContainer then withAuras = withAuras + 1 end
+			if cell.probeGroup then grouped = grouped + 1 end
+			if cell.probeBuffs then buffed = buffed + 1 end
+		end
+		line("cells: " .. #cells .. "  ·  group members: "
+			.. tostring(GetNumGroupMembers and GetNumGroupMembers() or 0))
+		line("cells with an AuraContainer: " .. withAuras
+			.. "  ·  debuff group added: " .. grouped
+			.. "  ·  buff group added: " .. buffed)
+		line("look: buffs and debuffs should show as small icons in each"
+			.. " box's bottom-right corner. Left-click a box to target them.")
+		line("icon setup ran " .. probeInit.ran .. " times"
+			.. (probeInit.err and ("; error " .. probeInit.err) or "; no errors"))
+		for i = 1, math.min(3, #cells) do
+			line("box " .. i .. ": " .. ContainerReport(cells[i]))
+		end
+
+		-- The roster moves; keep up with it while the probe is up.
+		if C_Timer and C_Timer.NewTicker and not headerTicker then
+			headerTicker = C_Timer.NewTicker(1, function()
+				if InCombatLockdown() then return end
+				for _, cell in ipairs(HeaderCells()) do DressCell(cell) end
+			end)
+		end
+	end
+
+	local text = table.concat(out, string.char(10))
+	if A.Errors and A.Errors.ShowText then
+		A.Errors:ShowText((A.Errors.Header and A.Errors:Header() or "") .. text)
+	else
+		for _, l in ipairs(out) do A:Print(l) end
+	end
+end
+
+handlers.probe = function(arg)
+	if arg == "snippet" then
+		SnippetProbe()
+		return
+	end
+	if arg == "header" then
+		HeaderProbe()
+		return
+	end
+	A:Print(A.Hi("/lattice probe snippet") .. "  ·  do secure snippets run on this client")
+	A:Print(A.Hi("/lattice probe header") .. "  ·  a bare raid header with the client's debuff icons; again to remove")
 end
 
 --- The class resource tray, and the preview that lets one character check all

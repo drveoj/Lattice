@@ -2512,12 +2512,15 @@ local function resolveVisibility(frame, values)
 		-- driver - so an unknown one here is a failure, not a quiet false.
 		-- Era's parser is not known to have the extra-action pair, so they are
 		-- understood on the Forever run only.
-		local known = { pet = true, nopet = true }
+		-- group:raid on both: a stock macro option, in PitBull4's own state
+		-- driver (Main.lua:1822), which ships for Classic.
+		local known = { pet = true, nopet = true, ["group:raid"] = true }
 		if _G.__flavour == "camelot" then known.extrabar, known.canexitvehicle = true, true end
 		if cond and not known[cond] then fail("unknown macro option in a driver: " .. cond) end
 		local hit = (cond == nil)
 			or (cond == "pet" and UnitExists("pet"))
 			or (cond == "nopet" and not UnitExists("pet"))
+			or (cond == "group:raid" and IsInRaid())
 			or (cond == "extrabar" and C_ActionBar.HasExtraActionBar())
 			or (cond == "canexitvehicle" and CanExitVehicle())
 		if verb and hit then
@@ -12407,6 +12410,25 @@ section("party: what a capsule says about the person", function()
 		tostring(f4:GetAlpha()) .. ")")
 	check(f4.class:GetText() ~= "Mage",
 		"and the line under the name says so (" .. tostring(f4.class:GetText()) .. ")")
+end)
+
+section("party: in a raid, the capsules give way to the raid's frames", function()
+	-- Blizzard's own rule (GroupFrameVisibility.lua:5-6): party frames in a
+	-- group and not in a raid. Ours showed your subgroup over the raid's grid
+	-- (Joe, 2026-10-23). Converted MID-FIGHT on purpose: our own Hide is
+	-- refused then, so only the client's driver can do it.
+	local PF = A:GetModule("partyframes")
+	local plainIsInRaid = IsInRaid
+	check(PF.stack:IsShown(), "in a party, the capsules are up")
+	_G.__inCombat = true
+	IsInRaid = function() return true end
+	_G.__resolveStateDrivers()
+	check(not PF.stack:IsShown(),
+		"converted to a raid mid-fight, they go - by the client's driver")
+	IsInRaid = plainIsInRaid
+	_G.__resolveStateDrivers()
+	_G.__inCombat = false
+	check(PF.stack:IsShown(), "and back to a party, they come back")
 end)
 
 section("party: the crown is on your own capsule too", function()
@@ -35813,6 +35835,55 @@ section("threat: the probe reads the client rather than the plan", function()
 
 	_G.__units.player.inCombat = false
 	wipe(_G.__threat)
+	A.Errors.ShowText = realShow
+end)
+
+section("probe: do secure snippets run on this client", function()
+	-- A RAID-FRAMES PROBE (2026-10-23). There is no restricted environment in
+	-- here, so whether a snippet RUNS is the client's to answer - what is
+	-- checked is that the report comes back, names both routes, never throws,
+	-- and in a fight says to come back rather than touching a secure frame.
+	local shown = nil
+	local realShow = A.Errors.ShowText
+	A.Errors.ShowText = function(_, text) shown = text return end
+	local run = SlashCmdList["AETHERUI"]
+
+	local ok, err = pcall(run, "probe snippet")
+	check(ok and shown ~= nil, "the snippet probe reports without throwing ("
+		.. tostring(err) .. ")")
+	check(shown and shown:find("Execute:", 1, true)
+		and shown:find("_onattributechanged:", 1, true),
+		"and names both routes it tried")
+
+	_G.__inCombat = true
+	shown = nil
+	run("probe snippet")
+	check(shown and shown:find("in combat", 1, true)
+		and not shown:find("Execute:", 1, true),
+		"in a fight it touches nothing and says to run it again after")
+	_G.__inCombat = false
+
+	-- THE BARE RAID HEADER: up, reported, and down again on a second run.
+	-- Whether the client fills it is the client's to answer.
+	shown = nil
+	ok, err = pcall(run, "probe header")
+	check(ok and shown and shown:find("cells:", 1, true)
+		and shown:find("AuraContainer", 1, true),
+		"the header probe goes up and reports its cells (" .. tostring(err) .. ")")
+	check(_G["LatticeProbeHeader"] and _G["LatticeProbeHeader"]:IsShown(),
+		"and the header is on screen")
+	shown = nil
+	run("probe header")
+	check(shown and shown:find("taken down", 1, true)
+		and not _G["LatticeProbeHeader"]:IsShown(), "and a second run takes it down")
+	_G.__inCombat = true
+	shown = nil
+	run("probe header")
+	check(shown and shown:find("in combat", 1, true)
+		and not _G["LatticeProbeHeader"]:IsShown(),
+		"in a fight it leaves the header alone")
+	_G.__inCombat = false
+
 	A.Errors.ShowText = realShow
 end)
 
