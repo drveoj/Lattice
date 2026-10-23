@@ -385,7 +385,8 @@ local function UpdateStatus(f)
 
 	-- The crown. UnitIsGroupLeader rather than a roster walk: the client
 	-- answers this per unit and the answer changes on its own event.
-	f.crown:SetShown(UnitIsGroupLeader and UnitIsGroupLeader(unit) or false)
+	-- Through W.ShowFromBoolean: the answer can be secret on Forever.
+	W.ShowFromBoolean(f.crown, UnitIsGroupLeader and UnitIsGroupLeader(unit))
 
 	-- The mark and the flag, both in the client's own art.
 	W.SetRaidMark(f.marker, unit)
@@ -771,6 +772,9 @@ function PF:RefreshPanel()
 	-- looks pressable and does nothing is the worse of the two.
 	local hasTarget = UnitExists and UnitExists("target")
 	local on = hasTarget and GetRaidTargetIndex and GetRaidTargetIndex("target")
+	-- A SECRET MARK RINGS NO WELL. Which well it matches is a comparison, and
+	-- a secret cannot be compared; the wells still set marks.
+	if A.IsSecret(on) then on = nil end
 	-- THE DIM GOES ON LAST. A well IS its own glass surface, so
 	-- W.SetButtonState writes its alpha too - setting the dim first and the
 	-- state second put every well straight back to full, and the grid looked

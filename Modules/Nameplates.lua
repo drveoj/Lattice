@@ -158,12 +158,15 @@ local function NpcTitle(unit)
 	if not unit then return nil end
 	if UnitIsPlayer and UnitIsPlayer(unit) then return nil end
 
+	-- A SECRET NAME OR GUID HAS NO TITLE TO GIVE. Both are secret for an NPC
+	-- on Forever (SecretWhenUnitIdentityRestricted), and the GUID is split and
+	-- compared below.
 	local name = UnitName(unit)
-	if not name then return nil end
+	if type(name) == "nil" or A.IsSecret(name) then return nil end
 
 	-- THE GUID FIRST, because the cache is keyed off it.
 	local guid = UnitGUID and UnitGUID(unit)
-	if not guid then return nil end
+	if type(guid) == "nil" or A.IsSecret(guid) then return nil end
 	local key = TitleKey(guid)
 
 	local seen = titleCache[key]
@@ -407,10 +410,13 @@ local function LayoutNameForm(f)
 	-- The frame is the text's own size, so anything hung under it - a cast
 	-- capsule, a row of chips - centres on the NAME rather than on a box that
 	-- is mostly empty.
-	local nameW = math.ceil(f.name:GetStringWidth() or 0)
+	--
+	-- Through W.StringWidth/Height: on Forever a plate's strings measure secret
+	-- (its anchoring is). A name the client hides outright gets the bar's width.
+	local nameW = math.ceil(W.StringWidth(f.name) or cfg().barWidth)
 	local w = nameW + (pip and (PIP + GAP_PIP) or 0)
-	local h = math.ceil(f.name:GetStringHeight() or 12)
-	if sub then h = h + GAP_GUILD + math.ceil(f.guild:GetStringHeight() or 10) end
+	local h = math.ceil(W.StringHeight(f.name) or 12)
+	if sub then h = h + GAP_GUILD + math.ceil(W.StringHeight(f.guild) or 10) end
 	f:SetSize(math.max(w, PIP), math.max(h, PIP))
 
 	f.chip:Hide()
@@ -536,7 +542,10 @@ local function UpdateName(f)
 		f.chip:SetPoint("LEFT", f.name, "LEFT", 0, 0)
 		f.chip:Show()
 		-- The chip is inline right of the name, so the name gives up the room.
-		f.name:SetWidth(math.max(20, c.barWidth - f.chip:GetWidth() - GAP_CHIP))
+		-- Glass.SizeOf: the chip's own width reads secret on Forever, and
+		-- this is the width it was given.
+		local chipW = Glass.SizeOf(f.chip) or 0
+		f.name:SetWidth(math.max(20, c.barWidth - chipW - GAP_CHIP))
 		f.chip:ClearAllPoints()
 		f.chip:SetPoint("LEFT", f.name, "RIGHT", GAP_CHIP, 0)
 	else
@@ -571,7 +580,7 @@ local function UpdateBar(f)
 		f.bar:ClearAllPoints()
 		f.bar:SetPoint("TOP", f.guild:IsShown() and f.guild or f.name,
 			"BOTTOM", 0, -GAP_ROW)
-		f.bar:SetWidth(math.max(40, f:GetWidth() or 40))
+		f.bar:SetWidth(math.max(40, Glass.SizeOf(f) or 40))
 		if wants then f.bar:Show() UpdateHealth(f) else f.bar:Hide() end
 	else
 		LayoutRow(f, wants)
@@ -678,8 +687,13 @@ local function Emphasise(f, on, instant)
 	end
 end
 
+--- A secret answer (SecretWhenUnitComparisonRestricted, on a restricted map)
+--  reads as "not the target": the plate loses its emphasis, not the frame.
 local function IsTarget(unit)
-	return (unit and UnitIsUnit and UnitIsUnit(unit, "target")) and true or false
+	if not (unit and UnitIsUnit) then return false end
+	local is = UnitIsUnit(unit, "target")
+	if A.IsSecret(is) then return false end
+	return is and true or false
 end
 
 local function UpdateEdge(f)
@@ -938,8 +952,16 @@ local function SetChip(chip, texture, label)
 	chip.text:SetText(label or "")
 	W.Color(chip.text, Palette.c.npChipInk)
 
-	local w = (texture and (CHIP_ICON + CHIP_GAP) or 0)
-		+ math.ceil(chip.text:GetStringWidth() or 0)
+	-- A secret aura name (no width to be had) gets the cast capsule's fixed
+	-- name width and is cut to fit, the same answer the cast gives.
+	chip.text:SetWidth(0)
+	local textW = W.StringWidth(chip.text)
+	if not textW then
+		textW = CAST_NAME_W
+		chip.text:SetWordWrap(false)
+		chip.text:SetWidth(CAST_NAME_W)
+	end
+	local w = (texture and (CHIP_ICON + CHIP_GAP) or 0) + math.ceil(textW)
 	chip:SetWidth(w + CHIP_PAD * 2)
 	chip:Show()
 end
@@ -991,7 +1013,9 @@ function UpdateChips(f)
 
 	-- Centred as a row under the capsule.
 	local total = 0
-	for i = 1, shown do total = total + (f.chips[i]:GetWidth() or 0) end
+	-- Glass.SizeOf: a chip's width reads secret on Forever; this is the one
+	-- SetChip gave it.
+	for i = 1, shown do total = total + (Glass.SizeOf(f.chips[i]) or 0) end
 	total = total + CHIP_GAP * math.max(0, shown - 1)
 
 	-- Under the cast capsule when there is one. Both want the space beneath the
@@ -1003,7 +1027,7 @@ function UpdateChips(f)
 		local chip = f.chips[i]
 		chip:ClearAllPoints()
 		chip:SetPoint("TOPLEFT", below, "BOTTOM", x, -CHIP_GAP)
-		x = x + (chip:GetWidth() or 0) + CHIP_GAP
+		x = x + (Glass.SizeOf(chip) or 0) + CHIP_GAP
 	end
 end
 

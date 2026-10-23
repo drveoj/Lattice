@@ -495,13 +495,21 @@ end
 local NAME_GAP = 8      -- between the name and the subtitle
 
 --- The subtitle's forms, richest first, always ending in nothing at all.
+--
+--  A SECRET PART IS LEFT OUT. Race, class and creature type are secret for
+--  any NPC on Forever (SecretWhenUnitIdentityRestricted), and a secret cannot
+--  be joined into a string or measured - so "Humanoid · Lv 60" becomes
+--  "Lv 60" rather than an error.
 local function SubForms(unit, levelText)
 	if UnitIsPlayer(unit) then
 		local race, class = UnitRace(unit), UnitClass(unit)
+		if A.IsSecret(race) then race = nil end
+		if A.IsSecret(class) then class = nil end
 		if race and class then return { race .. " " .. class, class, "" } end
 		return { class or race or "", "" }
 	end
 	local t = UnitCreatureType(unit)
+	if A.IsSecret(t) then t = nil end
 	if t then return { t .. " \194\183 Lv " .. levelText, t, "" } end
 	return { "Lv " .. levelText, "" }
 end
@@ -548,7 +556,9 @@ local function UpdateName(f)
 	if not UnitExists(unit) then return end
 
 	if f.crown then
-		f.crown:SetShown(UnitIsGroupLeader and UnitIsGroupLeader(unit) or false)
+		-- Through W.ShowFromBoolean: on a target whose identity is restricted
+		-- the answer is secret, and testing it throws.
+		W.ShowFromBoolean(f.crown, UnitIsGroupLeader and UnitIsGroupLeader(unit))
 		-- Both in the client's own art: a skull is a skull and a faction
 		-- crest is a faction crest, on every skin.
 		W.SetRaidMark(f.marker, unit)
@@ -564,6 +574,22 @@ local function UpdateName(f)
 	local subs  = SubForms(unit, levelText)
 	local room  = f.block and f.block:GetWidth() or 0
 	if room <= 0 then room = A.Config:Module("unitframes").barWidth or 200 end
+
+	-- A SECRET NAME CANNOT BE MEASURED, so there is no fitting it: its width
+	-- is secret too. It goes on as it is, beside the plain subtitle, and the
+	-- client cuts it to whatever room is left.
+	if A.IsSecret(names[1]) then
+		local sub = subs[1]
+		f.sub:SetText(sub)
+		f.name:SetText(names[1])
+		-- W.StringWidth: the subtitle hangs off the secret name, so its own
+		-- width reads secret too, plain text or not.
+		local spare = room
+		if sub ~= "" then spare = spare - NAME_GAP - (W.StringWidth(f.sub) or 0) end
+		f.name:SetWidth(math.max(20, spare))
+		f._nameStep, f._nameTruncated = nil, nil
+		return
+	end
 
 	-- The order from the note above, expressed as which form of each to try.
 	-- Step 3 is a no-op on a player (one name form) and step 2 is a no-op on an

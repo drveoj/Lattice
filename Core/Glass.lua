@@ -198,6 +198,52 @@ local function SnapIn(frame, v)
 	return math.floor(v / step + 0.5) * step
 end
 
+--- A surface's width and height, OR THE LAST ONES IT WAS ALLOWED TO KNOW.
+--
+--  On Forever the client hides a frame's geometry once its anchoring is
+--  secret - a frame hung off one whose position it will not tell an addon,
+--  a nameplate the likely one. GetWidth and GetHeight then come back secret
+--  (`SecretWhenAnchoringSecret`, SimpleScriptRegionAPIDocumentation.lua:161),
+--  and comparing one throws: 99 of them off one line on 2026-10-23.
+--
+--  What stands in: the size the caller last GAVE it (a pill records that, see
+--  CreatePill), then the last size it could read. Neither, and the answer is
+--  nil - lay nothing out rather than guess. Era has no secrets, so there the
+--  read always wins and is remembered for nothing.
+local function SizeOf(self)
+	local w, h = self:GetWidth(), self:GetHeight()
+	if A.IsSecret(w, h) then
+		return self._askW or self._w, self._askH or self._h
+	end
+	self._w, self._h = w, h
+	return w or 0, h or 0
+end
+Glass.SizeOf = SizeOf
+
+--- THE SIZE A FRAME IS GIVEN, WRITTEN DOWN, for SizeOf to fall back on.
+--
+--  Where the client hides the size a frame ended up at, the one it was given
+--  is the only one left. Pills take it (their caps are laid out from it), and
+--  so do bars: a health bar hangs off the name line, and an NPC's name is
+--  secret on Forever, so the bar's width reads secret too (`Widgets.lua:727`,
+--  the absorb shield, 2026-10-23).
+function Glass.RecordSize(f)
+	local setSize, setWidth, setHeight = f.SetSize, f.SetWidth, f.SetHeight
+	function f:SetSize(w, h, ...)
+		self._askW, self._askH = w, h
+		return setSize(self, w, h, ...)
+	end
+	function f:SetWidth(w, ...)
+		self._askW = w
+		return setWidth(self, w, ...)
+	end
+	function f:SetHeight(h, ...)
+		self._askH = h
+		return setHeight(self, h, ...)
+	end
+	return f
+end
+
 --- EVERY CORNER'S MULTIPLIER: the Theme page's corner radius over its
 --  default 12 (Joe, 2026-10-10). The design's radii - 28 for the options
 --  window, 20 for a panel, 22 for a branch - keep their proportions to each
@@ -213,8 +259,8 @@ end
 --  more than half the short side, or the arcs cross.
 local function CornerOf(self)
 	local c = self._corner or 12
-	local w, h = self:GetWidth() or 0, self:GetHeight() or 0
-	local half = math.min(w, h) / 2
+	local w, h = SizeOf(self)
+	local half = (w and h) and math.min(w, h) / 2 or 0
 	if half > 0 and c >= half - 0.5 then return math.min(c, half) end
 	c = c * Glass.CornerScale()
 	if half > 0 and c > half then c = half end
@@ -385,8 +431,8 @@ end
 
 function Surface:_LayoutPillShadow()
 	if not self._shadow then return end
-	local h = self:GetHeight() or 0
-	if h <= 0 then return end
+	local _, h = SizeOf(self)
+	if not h or h <= 0 then return end
 	local s = SnapIn(self, h / 4)
 	Layout3(self._shadow, self, SnapIn(self, (h + 2 * s) / 2), s)
 end
@@ -682,6 +728,10 @@ function Glass.CreatePill(parent, opts)
 
 	f._kind = "pill"
 
+	-- A nameplate first built inside a dungeon never gets to read its size at
+	-- all, so without this that plate would draw no glass.
+	Glass.RecordSize(f)
+
 	-- ONE GEOMETRY, TWO TEXTURES. See Glass.PILL_ART_MIN: the capsule art is
 	-- authored at twice a 4K display, which is right for a cast bar and wrong
 	-- for a level chip - at twenty pixels tall its 128-texel cap is minified
@@ -731,8 +781,8 @@ function Glass.CreatePill(parent, opts)
 	--  anybody asking for a tall capsule meant. Anything genuinely wanting a
 	--  tall rounded shape should use CreatePanel with a corner radius.
 	local function resize(self)
-		local h, w = self:GetHeight() or 0, self:GetWidth() or 0
-		if h <= 0 or w <= 0 then return end
+		local w, h = SizeOf(self)
+		if not (w and h) or h <= 0 or w <= 0 then return end
 
 		-- WHICH ART, decided from the height every time it changes. A pill built
 		-- at a default and sized afterwards - which is most of them - would

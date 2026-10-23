@@ -313,6 +313,8 @@ function TH:RoleOf(unit)
 	-- exact failure this whole section exists to prevent, arriving through the
 	-- one branch that looked like it was being careful.
 	local assigned = UnitGroupRolesAssigned and UnitGroupRolesAssigned(unit)
+	-- Secret for a unit outside the group on Forever; comparing it throws.
+	if A.IsSecret(assigned) then assigned = nil end
 	if assigned == "TANK" then return "tank" end
 
 	-- INFERRED FOR ANYONE, not only for the player. The plan restricted this to
@@ -625,7 +627,10 @@ function TH:Poll()
 				if mob and UnitAffectingCombat(mob) then
 					local tanking, status, scaled, raw, threat = Read(unit, mob)
 					if scaled ~= nil then
-						local key = UnitGUID(mob) or mob
+						-- A mob's GUID is secret on Forever; a secret cannot
+						-- key a table, so the token stands in.
+						local key = UnitGUID(mob)
+						if type(key) == "nil" or A.IsSecret(key) then key = mob end
 						crowd[key] = (crowd[key] or 0) + 1
 						pending[#pending + 1] = {
 							unit = unit, mob = mob, key = key,

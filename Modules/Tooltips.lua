@@ -872,12 +872,21 @@ function TT:OnUnit(tip)
 	-- IsUnit is what Blizzard's own handler uses here (GameTooltip.lua:499);
 	-- GetUnit exists on the live client but is called nowhere in the Classic
 	-- source, so it is probed rather than trusted.
+	--
+	-- A SECRET TOKEN IS NO TOKEN. On Forever the world cursor's tooltip hands
+	-- back the unit as a secret string, and UnitExists refuses one from addon
+	-- code (Joe, 2026-10-23, Tooltips.lua:881). "mouseover" is ours, so never
+	-- secret; and if even IsUnit's answer is secret, the tooltip stays as
+	-- Blizzard drew it rather than throwing a second error.
 	local unit
 	if tip.GetUnit then
 		local ok, _, u = pcall(tip.GetUnit, tip)
-		if ok then unit = u end
+		if ok and not A.IsSecret(u) then unit = u end
 	end
-	if not unit and tip.IsUnit and tip:IsUnit("mouseover") then unit = "mouseover" end
+	if not unit and tip.IsUnit then
+		local over = tip:IsUnit("mouseover")
+		if not A.IsSecret(over) and over then unit = "mouseover" end
+	end
 	if not unit or not UnitExists(unit) then return end
 
 	-- 1. the name, in the reaction colour

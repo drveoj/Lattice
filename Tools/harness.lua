@@ -35,6 +35,9 @@ _G.__flavour = (... == "camelot") and "camelot" or "era"
 -- kindness the mock keeps having to have taken off it.
 _G.__iface = (_G.__flavour == "camelot") and 16001 or 11509
 _G.__build = (_G.__flavour == "camelot") and "1.60.1" or "1.15.9"
+-- Stood in until the secret-anchoring model is defined further down; the
+-- region getters ask it from the first frame on.
+_G.__secretAnchored = function() return false end
 function GetBuildInfo()
 	return _G.__build, "69913", "Sep 22 2026", _G.__iface
 end
@@ -366,12 +369,14 @@ local function widgetBase(kind)
 	end
 
 	function o:GetWidth()
+		if _G.__secretAnchored(self) then return _G.__SecretStandIn() end
 		local t = allTarget(self)
 		if t then return t:GetWidth() end
 		if self.__w and self.__w > 0 then return self.__w end
 		return derived(self, "x", "__inWidth") or self.__w
 	end
 	function o:GetHeight()
+		if _G.__secretAnchored(self) then return _G.__SecretStandIn() end
 		local t = allTarget(self)
 		if t then return t:GetHeight() end
 		if self.__h and self.__h > 0 then return self.__h end
@@ -706,6 +711,14 @@ local function newTexture(owner, layer, sub)
 		end
 		self.__coord = { a, b, c, d }
 	end
+	-- Documented on both clients. The cell may be secret (it takes one from
+	-- addon code); the grid size never is.
+	function t:SetSpriteSheetCell(cell, rows, cols)
+		if type(rows) ~= "number" or type(cols) ~= "number" then
+			fail("SetSpriteSheetCell needs rows and columns")
+		end
+		self.__sheetCell = cell
+	end
 	-- A nine-slice's pieces each round their own edges to the pixel grid unless
 	-- this is turned off, which is what puts a bright or dark hairline exactly
 	-- where the arc meets the straight edge.
@@ -900,6 +913,7 @@ local function newFontString(owner, layer)
 	--  having no text at all both came back as nought.
 	local baseWidth = f.GetWidth
 	function f:GetWidth()
+		if _G.__secretAnchored(self) then return _G.__SecretStandIn() end
 		local w = baseWidth(self)
 		if (w or 0) > 0 then return w end
 		return self:GetStringWidth()
@@ -909,6 +923,7 @@ local function newFontString(owner, layer)
 		-- A secret string has a secret width (SecretWhenAnchoringSecret), and
 		-- the stand-in throws on any sum, as the client's does.
 		if issecretvalue and issecretvalue(self.__text) then return _G.__SecretStandIn() end
+		if _G.__secretAnchored(self) then return _G.__SecretStandIn() end
 		local size = (self.__font and self.__font[2]) or 11
 		local text, textures = MEASURE(self.__text or "")
 		local full = textures + #text * size * 0.52
@@ -934,6 +949,7 @@ local function newFontString(owner, layer)
 	--  the text and a width are both set, so that is what this models: explicit
 	--  newlines split lines, and each line wraps at the set width.
 	function f:GetStringHeight()
+		if _G.__secretAnchored(self) then return _G.__SecretStandIn() end
 		local size = (self.__font and self.__font[2]) or 11
 		local text = self.__text or ""
 		-- GetWidth, not __w: a FontString stretched between a left and a right
@@ -5501,6 +5517,31 @@ if _G.__flavour == "camelot" then
 	end
 end
 
+--- SECRET ANCHORING, modelled. A region anchored, directly or down a chain,
+--  to one whose position the client hides reports a secret width and
+--  height, and so do its strings (`SecretWhenAnchoringSecret`). Two roots:
+--  a plate a test has flagged __secretAnchoring (with __plateAnchoringSecret
+--  on), and - always, on Forever - a string holding SECRET TEXT, whose
+--  extent is the thing hidden. The second is what a health bar hung off an
+--  NPC's name ran into (`Widgets.lua:727`, 2026-10-23). A ruler on UIParent
+--  stays plain. Era has no secrets, so there it answers no at once.
+function _G.__secretAnchored(r)
+	if not issecretvalue then return false end
+	local seen, queue = {}, { r }
+	while #queue > 0 do
+		local f = table.remove(queue)
+		if type(f) == "table" and not seen[f] then
+			seen[f] = true
+			if (f.__secretAnchoring and _G.__plateAnchoringSecret)
+				or issecretvalue(f.__text) then
+				return true
+			end
+			for _, pt in ipairs(f.__points or {}) do queue[#queue + 1] = pt[2] end
+		end
+	end
+	return false
+end
+
 -- BLIZZARD'S OWN UNIT FRAMES, which this mock simply did not have.
 --
 -- UF:HideBlizzard banishes six of them and nothing here existed to banish, so
@@ -7182,6 +7223,9 @@ function _G.__spawnPlate(token, data)
 	end
 
 	base.unitToken = token
+	-- A plate's position is what the client hides on a restricted map; a test
+	-- of that switches __plateAnchoringSecret on before spawning.
+	base.__secretAnchoring = _G.__plateAnchoringSecret or nil
 	activePlates[token] = base
 	activeOrder[#activeOrder + 1] = base
 	base:Show()
@@ -8741,6 +8785,102 @@ do  -- the bug this replaced: it only ever showed up mid-fight
 	check(not UF.target.glass:IsShown(),
 		"losing a target in combat hides the glass without a blocked call")
 	_G.__inCombat = false
+end
+
+-- A LEADER FLAG THE CLIENT KEEPS SECRET. UnitIsGroupLeader is secret on a
+-- target whose identity is restricted, and the crown tested it:
+-- `UnitFrames.lua:551: attempt to perform boolean test on a secret boolean`
+-- (Joe, 2026-10-23). A table stand-in cannot fail a truth test in plain Lua,
+-- so the crown's SetShown refuses a secret instead - which the client also
+-- does (AllowedWhenUntainted). A thrown handler is recorded by fire().
+if _G.__flavour == "camelot" then
+	local crown = UF.target.crown
+	local plainLeader, plainShown = UnitIsGroupLeader, crown.SetShown
+	local flag = _G.__SecretStandIn()
+	UnitIsGroupLeader = function() return flag end
+	crown.SetShown = function(self, v)
+		if issecretvalue(v) then
+			error("bad argument #1 to 'SetShown' (Secret values are only allowed"
+				.. " during untainted execution for this argument.)")
+		end
+		return plainShown(self, v)
+	end
+	_G.__units.target.exists = true
+	fire("PLAYER_TARGET_CHANGED")
+	check(crown:IsShown() and crown.__alphaFlag == flag,
+		"a secret leader flag shows the crown and hands the flag to"
+		.. " SetAlphaFromBoolean, unread")
+	UnitIsGroupLeader, crown.SetShown = plainLeader, plainShown
+	fire("PLAYER_TARGET_CHANGED")
+	check(crown.__alpha == 1,
+		"and a plain answer afterwards puts the alpha back ("
+		.. tostring(crown.__alpha) .. ")")
+end
+
+-- AN NPC'S IDENTITY IS SECRET. Forever hides PvP flag, role, name, race,
+-- class and creature type for any unit not player-controlled or in the group
+-- (SecretWhenUnitIdentityRestricted). The PvP flag threw first: `Widgets.lua:
+-- 385: attempt to perform boolean test on local 'flagged'` (Joe, 2026-10-23),
+-- and the name fitting after it on the same event would have been next.
+-- fire() records a thrown handler, so the target change is itself a check.
+if _G.__flavour == "camelot" then
+	local t = UF.target
+	local saved = {
+		pvp = UnitIsPVP, role = UnitGroupRolesAssigned, name = UnitName,
+		race = UnitRace, class = UnitClass, creature = UnitCreatureType,
+	}
+	local flag, sName, sType = _G.__SecretStandIn(), _G.__SecretStandIn(),
+		_G.__SecretStandIn()
+	local function hidden(u) return u == "target" end
+	UnitIsPVP = function(u) if hidden(u) then return flag end return saved.pvp(u) end
+	UnitGroupRolesAssigned = function(u)
+		if hidden(u) then return _G.__SecretStandIn() end return saved.role(u)
+	end
+	UnitName = function(u) if hidden(u) then return sName end return saved.name(u) end
+	UnitCreatureType = function(u)
+		if hidden(u) then return sType end return saved.creature(u)
+	end
+	local savedFaction, savedPlayer = _G.__units.target.faction, _G.__units.target.isPlayer
+	_G.__units.target.exists, _G.__units.target.faction = true, "Alliance"
+	_G.__units.target.isPlayer = false
+	fire("PLAYER_TARGET_CHANGED")
+	check(t.pvp:IsShown() and t.pvp.__alphaFlag == flag,
+		"a secret PvP flag puts up the faction crest and hands the flag to"
+		.. " SetAlphaFromBoolean, unread")
+	check(not t.role:IsShown(), "a secret role draws no glyph")
+	check(t.name:GetText() == sName,
+		"a secret name goes onto the frame as it is, never measured")
+	check(t.sub:GetText() == "Lv " .. tostring(UnitLevel("target")),
+		"and a secret creature type is left out of the subtitle ("
+		.. tostring(t.sub:GetText()) .. ")")
+
+	-- AND EVERYTHING HUNG OFF THAT NAME MEASURES SECRET: the health bar sits
+	-- under it. The absorb ticker handed the bar's width to SetWidth, which
+	-- refuses a secret: `Widgets.lua:727` (Joe, 2026-10-23).
+	check(A.IsSecret(t.health:GetWidth()),
+		"the model holds: the health bar under a secret name has a secret width")
+	local plainSetWidth = t.health.absorb.past.SetWidth
+	local function refuse(self, w, ...)
+		if issecretvalue(w) then
+			error("bad argument #1 to 'SetWidth' (Secret values are only"
+				.. " allowed during untainted execution for this argument.)")
+		end
+		return plainSetWidth(self, w, ...)
+	end
+	t.health.absorb.past.SetWidth, t.health.absorb.back.SetWidth = refuse, refuse
+	local heldShow = A.db.profile.showAbsorb
+	A.db.profile.showAbsorb = true
+	local okAbs, errAbs = pcall(t.health.UpdateAbsorb, t.health, "target")
+	check(okAbs, "the absorb shield sizes itself without an error ("
+		.. tostring(errAbs) .. ")")
+	check(t.health.absorb.past.__w == A.Config:Module("unitframes").barWidth,
+		"from the width the bar was given (" .. tostring(t.health.absorb.past.__w) .. ")")
+	A.db.profile.showAbsorb = heldShow
+	t.health.absorb.past.SetWidth, t.health.absorb.back.SetWidth = plainSetWidth, plainSetWidth
+	UnitIsPVP, UnitGroupRolesAssigned, UnitName = saved.pvp, saved.role, saved.name
+	UnitRace, UnitClass, UnitCreatureType = saved.race, saved.class, saved.creature
+	_G.__units.target.faction, _G.__units.target.isPlayer = savedFaction, savedPlayer
+	fire("PLAYER_TARGET_CHANGED")
 end
 
 section("unit frames: switched off, no invisible buttons; back on, clickable", function()
@@ -28633,6 +28773,101 @@ do
 	__despawnPlate("nameplate1")
 end
 
+-- A PLATE WHOSE GEOMETRY THE CLIENT HIDES. On Forever everything hung off
+-- Blizzard's plate measures secret on a restricted map, plain text included:
+-- `Nameplates.lua:539: attempt to perform arithmetic on a secret number` and
+-- math.ceil's "numeric conversion" on NAME_PLATE_UNIT_ADDED (Joe,
+-- 2026-10-23). A thrown handler is recorded by fire() itself, so each spawn
+-- below is a check as well as a setup.
+if _G.__flavour == "camelot" then
+	print("== nameplates: a plate whose geometry is secret ==")
+	_G.__plateAnchoringSecret = true
+
+	local elite = { exists = true, name = "Kolkar Pack Runner", level = 18,
+		reaction = 2, hp = 900, hpMax = 1000, classification = "elite" }
+	local base = __spawnPlate("nameplate1", elite)
+	local f = NPm.plateFor(base)
+	check(A.IsSecret(f:GetWidth()) and A.IsSecret(f.name:GetStringWidth()),
+		"the model holds: the plate and its name measure secret")
+	local chipW = A.Glass.SizeOf(f.chip)
+	check(f.chip:IsShown() and chipW > 10,
+		"the ELITE chip is sized from its text, measured off the plate ("
+		.. tostring(chipW) .. ")")
+	check(f.name.__w and f.name.__w < A.Config:Module("nameplates").barWidth,
+		"and the name gives up the chip's room (" .. tostring(f.name.__w) .. ")")
+
+	-- Your debuffs on the target, as chips under it.
+	local savedAuras, savedTarget = _G.__auras.target, _G.__units.target
+	_G.__auras.target = { HARMFUL = {
+		{ "Chilled", 135834, 0, "Magic", 8, nil, "player", true },
+	} }
+	_G.__units.target = elite
+	fire("PLAYER_TARGET_CHANGED")
+	NPm.step(nil, 1)
+	local auraW = f.chips[1] and A.Glass.SizeOf(f.chips[1])
+	check(f._chipCount == 1 and auraW and auraW > 17 + 5 * 2,
+		"an aura chip is sized from its name, not just its padding ("
+		.. tostring(auraW) .. ")")
+	_G.__auras.target, _G.__units.target = savedAuras, savedTarget
+	fire("PLAYER_TARGET_CHANGED")
+	__despawnPlate("nameplate1")
+
+	-- The friendly name form sizes the whole plate from the name.
+	local mate = { exists = true, name = "Kindarhazan", level = 19, reaction = 5,
+		isPlayer = true, class = "Shaman", classToken = "SHAMAN",
+		guild = "Samophlange", hp = 800, hpMax = 800 }
+	base = __spawnPlate("nameplate1", mate)
+	f = NPm.plateFor(base)
+	local plateW = A.Glass.SizeOf(f)
+	check(f._nameForm and plateW and plateW > 30,
+		"a friendly's name form is sized from the name it carries ("
+		.. tostring(plateW) .. ")")
+	__despawnPlate("nameplate1")
+
+	-- AN NPC'S NAME AND GUID ARE SECRET (SecretWhenUnitIdentityRestricted).
+	-- The title lookup splits the GUID; a secret one gives no title instead.
+	local plainName, plainGUID, plainIsUnit = UnitName, UnitGUID, UnitIsUnit
+	local function plate(u) return type(u) == "string" and u:match("^nameplate") end
+	UnitName = function(u) if plate(u) then return _G.__SecretStandIn() end return plainName(u) end
+	UnitGUID = function(u) if plate(u) then return _G.__SecretStandIn() end return plainGUID(u) end
+	local keeper = { exists = true, name = "Innkeeper Grosk", level = 30,
+		reaction = 5, hp = 500, hpMax = 500 }
+	base = __spawnPlate("nameplate1", keeper)
+	f = NPm.plateFor(base)
+	check(f._nameForm and not f.guild:IsShown(),
+		"a friendly NPC with a secret name and GUID gets no title line")
+	__despawnPlate("nameplate1")
+
+	-- "Is this my target" is secret on a restricted map
+	-- (SecretWhenUnitComparisonRestricted); it reads as no.
+	UnitIsUnit = function(a, b)
+		if plate(a) or plate(b) then return _G.__SecretStandIn() end
+		return plainIsUnit(a, b)
+	end
+	-- The plate IS the target here, so only the secret can make it read no.
+	local heldTarget = _G.__units.target
+	_G.__units.target = elite
+	base = __spawnPlate("nameplate1", elite)
+	f = NPm.plateFor(base)
+	fire("PLAYER_TARGET_CHANGED")
+	NPm.step(nil, 1)
+	check((f._want or 0) ~= 1,
+		"a secret is-it-the-target answer reads as not the target ("
+		.. tostring(f._want) .. ")")
+	UnitIsUnit = plainIsUnit
+	fire("PLAYER_TARGET_CHANGED")
+	NPm.step(nil, 1)
+	check(f._want == 1, "and a plain yes makes it the target again ("
+		.. tostring(f._want) .. ")")
+	_G.__units.target = heldTarget
+	fire("PLAYER_TARGET_CHANGED")
+	__despawnPlate("nameplate1")
+	UnitName, UnitGUID, UnitIsUnit = plainName, plainGUID, plainIsUnit
+
+	_G.__plateAnchoringSecret = nil
+	base.__secretAnchoring = nil
+end
+
 print("== nameplates: a friendly is a name, not a plate ==")
 do
 	local mate = { exists = true, name = "Kindarhazan", level = 19, reaction = 5,
@@ -29375,6 +29610,43 @@ do
 		" / " .. string.format("%.5f", l2) .. ")")
 	cap:SetSize(80, 20)
 	check(cap._art == "small", "and shrunk again, so does the other")
+
+	-- A SIZE THE CLIENT WILL NOT TELL. On Forever a frame whose anchoring is
+	-- secret reports a secret width and height, and the pill's resize compared
+	-- one: `Glass.lua:735: attempt to compare local 'h' (a secret number
+	-- value)`, 99 times (Joe, 2026-10-23). It lays out from the size it was
+	-- GIVEN instead - and a pill that never once read a plain size is the
+	-- case that matters, because that is a nameplate built inside a dungeon.
+	if _G.__flavour == "camelot" then
+		local function hide(f)
+			local gw, gh = f.GetWidth, f.GetHeight
+			f.GetWidth = function() return _G.__SecretStandIn() end
+			f.GetHeight = function() return _G.__SecretStandIn() end
+			return function() f.GetWidth, f.GetHeight = gw, gh end
+		end
+		local hidden = A.Glass.CreatePill(host, {})
+		local unhidePill = hide(hidden)
+		local okSet, errSet = pcall(hidden.SetSize, hidden, 120, 24)
+		check(okSet, "a pill whose size is secret resizes without an error ("
+			.. tostring(errSet) .. ")")
+		-- Within a pixel: the cap is snapped to the physical grid (SnapIn).
+		local capW = hidden._fill[1].__w
+		check(type(capW) == "number" and math.abs(capW - 12) < 1,
+			"and lays its caps out from the size it was given, half of 24 ("
+			.. tostring(hidden._fill[1].__w) .. ")")
+		check(hidden._art == "small",
+			"and picks its art from that size too (" .. tostring(hidden._art) .. ")")
+		local okShadow, errShadow = pcall(hidden.SetShadow, hidden, 0.5)
+		check(okShadow, "its shadow lays out too (" .. tostring(errShadow) .. ")")
+		local panel = A.Glass.CreatePanel(host, {})
+		local unhidePanel = hide(panel)
+		local okPanel, errPanel = pcall(panel._Relayout, panel)
+		check(okPanel, "and a panel with a secret size keeps its corners ("
+			.. tostring(errPanel) .. ")")
+		-- Put back, or every later sweep of the surfaces would read a secret.
+		unhidePill()
+		unhidePanel()
+	end
 end
 
 print("== panels: one frame, one header, one way out ==")
@@ -31661,6 +31933,32 @@ do
 	local _, rest = T.ParseLevelLine("Level 20 Rare Elite Humanoid", true)
 	check(rest == "Humanoid", "both classification words come off a rare elite ("
 		.. tostring(rest) .. ")")
+
+	-- A SECRET UNIT TOKEN. Forever's world-cursor tooltip answers GetUnit with
+	-- a secret string, and UnitExists refuses one from addon code:
+	-- `Tooltips.lua:881: bad argument #1 to 'UnitExists' ... Secret values are
+	-- only allowed during untainted execution` (Joe, 2026-10-23). The mock's
+	-- UnitExists is made to refuse it the same way, or the check could not fail.
+	if _G.__flavour == "camelot" then
+		local plainExists, plainGetUnit = UnitExists, GameTooltip.GetUnit
+		UnitExists = function(u)
+			if issecretvalue(u) then
+				error("bad argument #1 to 'UnitExists' (Secret values are only"
+					.. " allowed during untainted execution for this argument.)")
+			end
+			return plainExists(u)
+		end
+		GameTooltip.GetUnit = function() return nil, _G.__SecretStandIn() end
+		GameTooltip:Hide()
+		-- A fresh fill: re-entering on text already stripped keeps the badge
+		-- by memory, which would prove nothing about where the unit came from.
+		local ok, err = pcall(GameTooltip.SetUnit, GameTooltip, "mouseover")
+		check(ok, "a secret unit token does not throw the unit handler ("
+			.. tostring(err) .. ")")
+		check(GameTooltip.aetherBadge:IsShown(),
+			"and the tooltip is still dressed, from \"mouseover\"")
+		UnitExists, GameTooltip.GetUnit = plainExists, plainGetUnit
+	end
 end
 
 section("tooltips: the level badge is a circle, not a rumour of one", function()
@@ -35020,6 +35318,38 @@ section("party controls: the marks go on your target", function()
 	p.clear:GetScript("OnClick")(p.clear)
 	check(GetRaidTargetIndex("target") == nil,
 		"Clear takes it off (" .. tostring(GetRaidTargetIndex("target")) .. ")")
+
+	-- A SECRET MARK, on Forever. GetRaidTargetIndex is documented
+	-- SecretReturns there. The stand-in throws on any < or arithmetic, as the
+	-- client does; an == against it cannot throw in Lua, so the wells are
+	-- checked by result: no ring, no error.
+	if _G.__flavour == "camelot" then
+		local secret = _G.__SecretStandIn()
+		_G.__raidTargets.target, _G.__raidTargets.player = secret, secret
+		local ok, err = pcall(PF.RefreshPanel, PF)
+		check(ok, "a secret mark on the target refreshes the grid without an"
+			.. " error (" .. tostring(err) .. ")")
+		local lit = 0
+		for _, b in ipairs(p.wells) do if b.__on then lit = lit + 1 end end
+		check(lit == 0, "and rings no well, since which one is a comparison ("
+			.. lit .. " lit)")
+
+		local tex = UIParent:CreateTexture()
+		local okMark, errMark = pcall(A.Widgets.SetRaidMark, tex, "target")
+		check(okMark, "the mark decorator takes a secret index without an"
+			.. " error (" .. tostring(errMark) .. ")")
+		check(tex.__sheetCell == secret and tex:IsShown(),
+			"and draws it by handing the index to SetSpriteSheetCell")
+
+		local said = {}
+		local okDiag, errDiag = pcall(A.PartyDiag, function(fmt, ...)
+			said[#said + 1] = select("#", ...) > 0 and fmt:format(...) or fmt
+		end)
+		check(okDiag and table.concat(said, "\n"):find("secret", 1, true) ~= nil,
+			"the party report prints a secret mark as \"secret\" ("
+			.. tostring(errDiag) .. ")")
+		_G.__raidTargets.target, _G.__raidTargets.player = nil, nil
+	end
 end)
 
 section("party: the stack is an ordinary placed frame", function()

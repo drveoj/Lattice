@@ -397,6 +397,22 @@ local function diag()
 	end
 end
 
+--- A unit's raid mark as text. "secret" when Forever hides it: printing one
+--  means reading it.
+local function markText(u)
+	local i = GetRaidTargetIndex and GetRaidTargetIndex(u)
+	if A.IsSecret(i) then return "secret" end
+	return tostring(i)
+end
+
+--- Whether a unit leads the group, as text. "secret" when Forever hides it:
+--  a secret boolean cannot even be tested.
+local function leadText(u)
+	local v = UnitIsGroupLeader and UnitIsGroupLeader(u)
+	if A.IsSecret(v) then return "secret" end
+	return tostring(v or false)
+end
+
 --- What the client says about your party, and what we drew from it.
 --
 --  Written because three rounds went by guessing why a raid mark was not on
@@ -442,8 +458,8 @@ local function partyDiag(say)
 			if f.pvp and f.pvp:IsShown()      then drawn[#drawn + 1] = "pvp" end
 			say("   %-12s %-4s %-8s %-8s %-6s %s",
 				u,
-				tostring(UnitIsGroupLeader and UnitIsGroupLeader(u) or false),
-				tostring(GetRaidTargetIndex and GetRaidTargetIndex(u)),
+				leadText(u),
+				markText(u),
 				tostring(UnitGroupRolesAssigned and UnitGroupRolesAssigned(u)),
 				tostring(UnitIsPVP and UnitIsPVP(u)),
 				#drawn > 0 and A.Good(table.concat(drawn, ",")) or A.Dim("nothing"))
@@ -460,7 +476,7 @@ local function partyDiag(say)
 		if me.pvp and me.pvp:IsShown()      then drawn[#drawn + 1] = "pvp" end
 		say("   %-12s %-4s %-8s %-8s %-6s %s", "player",
 			tostring(UnitIsGroupLeader and UnitIsGroupLeader("player") or false),
-			tostring(GetRaidTargetIndex and GetRaidTargetIndex("player")),
+			markText("player"),
 			tostring(UnitGroupRolesAssigned and UnitGroupRolesAssigned("player")),
 			tostring(UnitIsPVP and UnitIsPVP("player")),
 			#drawn > 0 and A.Good(table.concat(drawn, ",")) or A.Dim("nothing"))

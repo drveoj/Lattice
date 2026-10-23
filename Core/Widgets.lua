@@ -111,6 +111,57 @@ function W.Text(parent, style, justify, layer, size)
 	return fs
 end
 
+--- A string's width and height, EVEN WHERE THE CLIENT WILL NOT SAY.
+--
+--  On Forever a FontString whose anchoring is secret - anything on a
+--  nameplate, which hangs off Blizzard's plate - reports a secret width and
+--  height even for plain text (`SecretWhenAnchoringSecret`), and arithmetic
+--  on one throws: `Nameplates.lua:539`, and math.ceil's "numeric
+--  conversion", 2026-10-23. So the same text in the same font is measured
+--  again on a ruler of our own, parented to UIParent, where nothing is
+--  secret. Secret TEXT is another matter - that width is the thing being
+--  hidden - and the answer is nil: the caller picks a fixed size.
+local ruler
+
+local function Measure(fs, getter)
+	local v = fs[getter](fs)
+	if not A.IsSecret(v) then return v or 0 end
+	local text = fs:GetText()
+	if type(text) == "nil" or A.IsSecret(text) then return nil end
+	if not ruler then
+		ruler = UIParent:CreateFontString(nil, "BACKGROUND")
+		ruler:Hide()
+	end
+	ruler:SetFont(fs:GetFont())
+	ruler:SetText(text)
+	v = ruler[getter](ruler)
+	if A.IsSecret(v) then return nil end
+	return v or 0
+end
+
+function W.StringWidth(fs) return Measure(fs, "GetStringWidth") end
+function W.StringHeight(fs) return Measure(fs, "GetStringHeight") end
+
+--- Show a region on a yes or no the client may keep secret.
+--
+--  A secret boolean cannot be tested - `x or false` throws, "attempt to
+--  perform boolean test on a secret boolean value" (UnitFrames.lua:551,
+--  2026-10-23, UnitIsGroupLeader on a target whose identity is restricted).
+--  SetShown refuses one from addon code; SetAlphaFromBoolean takes it
+--  (`AllowedWhenTainted`), so the region stays shown and the client picks
+--  its alpha. A plain answer puts the alpha back, so one that was hidden by
+--  a secret last time is not left invisible.
+function W.ShowFromBoolean(region, value)
+	if not region then return end
+	if A.IsSecret(value) then
+		region:Show()
+		region:SetAlphaFromBoolean(value, 1, 0)
+		return
+	end
+	region:SetAlpha(1)
+	region:SetShown(value and true or false)
+end
+
 
 -- Both of these are nil-tolerant on purpose. They are called from skin and
 -- config passes that walk whole collections of widgets, and not every member of
@@ -276,6 +327,12 @@ local ROLE_GLYPH = { TANK = "tank", HEALER = "healer" }
 function W.SetRoleGlyph(tex, unit)
 	if not tex then return false end
 	local role = UnitGroupRolesAssigned and UnitGroupRolesAssigned(unit)
+	-- SECRET FOR ANY NPC on Forever (SecretWhenUnitIdentityRestricted): a
+	-- secret role cannot key the table, and has nothing to say here anyway.
+	if A.IsSecret(role) then
+		tex:Hide()
+		return false
+	end
 	local glyph = ROLE_GLYPH[role or "NONE"]
 	if glyph and A.Media:SetIcon(tex, glyph) then
 		local c = A.Palette.c
@@ -293,10 +350,28 @@ end
 --  out of the sheet AND sets the texcoord; a texture given the file and no
 --  coords draws all eight marks at once, which is unmistakable and has
 --  happened to everybody once.
+--
+--  THE INDEX CAN BE SECRET on WoW Forever (GetRaidTargetIndex is documented
+--  SecretReturns; EllesmereUI calls it "secret-prone" and guards it in four
+--  modules). SetMarkIcon does sums on it, and so does
+--  SetRaidTargetIconTexture, so a secret one goes straight to
+--  SetSpriteSheetCell, which takes a secret cell from addon code
+--  (SimpleTextureBaseAPIDocumentation.lua:565-572). type() is the existence
+--  test because it never reads the value.
 function W.SetRaidMark(tex, unit)
 	if not tex then return false end
 	local i = unit and GetRaidTargetIndex and GetRaidTargetIndex(unit)
-	if i and W.SetMarkIcon(tex, i) then
+	if type(i) == "nil" then
+		tex:Hide()
+		return false
+	end
+	if A.IsSecret(i) then
+		tex:SetTexture(MARK_SHEET)
+		tex:SetSpriteSheetCell(i, 4, 4)
+		tex:Show()
+		return true
+	end
+	if W.SetMarkIcon(tex, i) then
 		tex:Show()
 		return true
 	end
@@ -310,9 +385,27 @@ end
 --  marks - so this is Blizzard's own file, untinted. Neutral units have no
 --  badge at all, which is why the faction is asked for rather than assumed
 --  from a boolean.
+--
+--  THE FLAG CAN BE SECRET on Forever - for any NPC, and on a restricted map
+--  (SecretWhenUnitIdentityRestricted) - and testing it throws: "attempt to
+--  perform boolean test on local 'flagged'" (Joe, 2026-10-23). The faction
+--  never is, so the art goes up and the client decides the alpha from the
+--  flag, unread (SetAlphaFromBoolean, AllowedWhenTainted).
 function W.SetPvPMark(tex, unit)
 	if not tex then return false end
 	local flagged = UnitIsPVP and UnitIsPVP(unit)
+	if A.IsSecret(flagged) then
+		local faction = UnitFactionGroup and UnitFactionGroup(unit)
+		if A.IsSecret(faction) or not faction or faction == "Neutral" then
+			tex:Hide()
+			return false
+		end
+		tex:SetTexture("Interface\\TargetingFrame\\UI-PVP-" .. faction)
+		tex:Show()
+		tex:SetAlphaFromBoolean(flagged, 1, 0)
+		return true
+	end
+	tex:SetAlpha(1)
 	local faction = flagged and UnitFactionGroup and UnitFactionGroup(unit)
 	if flagged and faction and faction ~= "Neutral" then
 		tex:SetTexture("Interface\\TargetingFrame\\UI-PVP-" .. faction)
@@ -446,8 +539,10 @@ function W.Pill(parent, style, opts)
 		if fixedWidth then
 			self:SetWidth(fixedWidth)
 		else
-			local w = math.ceil(self.text:GetStringWidth() or 0)
-			self:SetWidth(w + self._padX * 2)
+			-- W.StringWidth: a chip on a nameplate measures secret. Secret
+			-- text keeps the width the chip already had.
+			local w = W.StringWidth(self.text)
+			if w then self:SetWidth(math.ceil(w) + self._padX * 2) end
 		end
 	end
 
@@ -627,9 +722,12 @@ function Bar:SetAbsorb(value, max)
 		a:Hide()
 		return
 	end
-	local width = self:GetWidth()
+	-- Glass.SizeOf, never a raw read: under a secret name the bar's own width
+	-- is secret, and SetWidth refuses one (`Widgets.lua:727`, 2026-10-23).
+	-- No width to be had at all, and the halves keep the one they have.
+	local width = A.Glass.SizeOf(self)
 	for _, half in ipairs(a.halves) do
-		half:SetWidth(width)
+		if width and width > 0 then half:SetWidth(width) end
 		half:SetMinMaxValues(0, max)
 		half:SetValue(value)
 	end
@@ -659,6 +757,8 @@ end
 function W.CreateBar(parent, opts)
 	opts = opts or {}
 	local bar = CreateFrame("StatusBar", nil, parent)
+	-- The width it is given, kept for when its own reads secret (SetAbsorb).
+	A.Glass.RecordSize(bar)
 	bar:SetStatusBarTexture(Media.texture.bar)
 	bar:SetMinMaxValues(0, 1)
 	bar:SetValue(1)
