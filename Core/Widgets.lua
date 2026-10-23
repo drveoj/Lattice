@@ -162,6 +162,209 @@ function W.ShowFromBoolean(region, value)
 	region:SetShown(value and true or false)
 end
 
+-- ---------------------------------------------------------------------------
+-- health and range a client may keep secret
+-- ---------------------------------------------------------------------------
+--
+-- Forever never lets an addon read health (UnitHealth is SecretReturns) or
+-- range (UnitInRange, likewise). It will EVALUATE a curve on health for us -
+-- UnitHealthPercent(unit, usePredicted, curve) - and hand back a colour or a
+-- number we may only pass on, and it will set an alpha from a flag we may not
+-- test (SetAlphaFromBoolean). Era's values are plain and read as ever. One
+-- call each, both clients; which path runs is the client's answer, not the
+-- flavour's. Method from EllesmereUI (EUI_RaidFrames_Colors.lua:53-62,
+-- 298-305; EUI_RaidFrames_Visibility.lua:84-91), read and not copied.
+
+--- Can this client evaluate a curve on health for us?
+local function HealthCurves()
+	return C_CurveUtil and C_CurveUtil.CreateColorCurve and UnitHealthPercent
+		and CreateColor and Enum and Enum.LuaCurveType and true or false
+end
+
+--- A plain health fraction, 0..1, for a client that lets us read it.
+local function PlainFraction(unit)
+	local cur, max = UnitHealth(unit), UnitHealthMax(unit)
+	if not max or max <= 0 then return 0 end
+	return (cur or 0) / max
+end
+
+--- A STEP colour curve per stops table, built once. Stops are
+--  { { fraction, colour }, ... } ascending; the highest at or under the
+--  health fraction wins.
+local colourCurves = setmetatable({}, { __mode = "k" })
+
+local function ColourCurve(stops, alphaOf)
+	local byAlpha = colourCurves[stops]
+	if not byAlpha then byAlpha = {} colourCurves[stops] = byAlpha end
+	local key = alphaOf and "alpha" or "plain"
+	if byAlpha[key] then return byAlpha[key] end
+	local curve = C_CurveUtil.CreateColorCurve()
+	curve:SetType(Enum.LuaCurveType.Step)
+	for _, s in ipairs(stops) do
+		local c = s[2]
+		curve:AddPoint(s[1], CreateColor(c[1], c[2], c[3], alphaOf and alphaOf(s) or c[4] or 1))
+	end
+	byAlpha[key] = curve
+	return curve
+end
+
+local function PlainStop(stops, f)
+	local pick = stops[1]
+	for _, s in ipairs(stops) do
+		if f >= s[1] then pick = s end
+	end
+	return pick
+end
+
+--- Colour a texture by how much health a unit has, never reading it.
+--  `stops`: { { 0, coral }, { 0.4, green } } and so on - keep the table and
+--  pass the same one each time, so its curve is built once.
+function W.HealthColor(tex, unit, stops)
+	if not (tex and unit and stops and stops[1]) then return end
+	if HealthCurves() then
+		local colour = UnitHealthPercent(unit, true, ColourCurve(stops))
+		if colour and colour.GetRGBA then
+			tex:SetVertexColor(colour:GetRGBA())
+		end
+		return
+	end
+	local c = PlainStop(stops, PlainFraction(unit))[2]
+	tex:SetVertexColor(c[1], c[2], c[3], c[4] or 1)
+end
+
+--- The health number, 0-100, shown only BELOW `below` (a fraction).
+--
+--  Forever writes the number itself (SetFormattedText takes a secret) and
+--  hides it with a second curve whose alpha is 0 from `below` up - the same
+--  colour, so nothing anywhere compares health. `colour` is the ink.
+local percentStops = setmetatable({}, { __mode = "k" })
+
+function W.HealthPercentText(fs, unit, below, colour)
+	if not (fs and unit and below and colour) then return end
+	if HealthCurves() and CurveConstants and CurveConstants.ScaleTo100 then
+		fs:SetFormattedText("%d", UnitHealthPercent(unit, true, CurveConstants.ScaleTo100))
+		-- One stops table per ink and threshold, kept so its curve is too.
+		local byBelow = percentStops[colour]
+		if not byBelow then byBelow = {} percentStops[colour] = byBelow end
+		local stops = byBelow[below]
+		if not stops then
+			stops = { { 0, colour, shown = true }, { below, colour } }
+			byBelow[below] = stops
+		end
+		local c = UnitHealthPercent(unit, true,
+			ColourCurve(stops, function(s) return s.shown and (colour[4] or 1) or 0 end))
+		if c and c.GetRGBA then fs:SetTextColor(c:GetRGBA()) end
+		return
+	end
+	local f = PlainFraction(unit)
+	if f < below then
+		fs:SetText(tostring(math.floor(f * 100)))
+		fs:SetTextColor(colour[1], colour[2], colour[3], colour[4] or 1)
+	else
+		fs:SetText("")
+	end
+end
+
+--- Fade a region to `outAlpha` while its unit is out of range.
+--
+--  A secret answer goes to SetAlphaFromBoolean untested. A plain one fades
+--  only when the client actually CHECKED - UnitInRange answers false/false
+--  for a unit it does not measure (yourself, a unit outside the group), and
+--  that is not "far away".
+function W.RangeAlpha(region, unit, outAlpha)
+	if not (region and unit and UnitInRange) then return end
+	local inRange, checked = UnitInRange(unit)
+	if A.IsSecret(inRange) then
+		if region.SetAlphaFromBoolean then
+			region:SetAlphaFromBoolean(inRange, 1, outAlpha)
+		end
+		return
+	end
+	if A.IsSecret(checked) then checked = true end
+	region:SetAlpha((checked and not inRange) and outAlpha or 1)
+end
+
+-- ---------------------------------------------------------------------------
+-- the client's aura containers
+-- ---------------------------------------------------------------------------
+
+--- Does this client fill aura containers for us? Asked of the client, not
+--  the flavour: Classic Era ships no Blizzard_AuraContainer, so the load
+--  fails. Asked once.
+local containersAvailable
+
+function W.AuraContainersAvailable()
+	if containersAvailable == nil then
+		local AO, ok = C_AddOns, false
+		if AO and AO.LoadAddOn and AO.IsAddOnLoaded then
+			if not AO.IsAddOnLoaded("Blizzard_AuraContainer") then
+				pcall(AO.LoadAddOn, "Blizzard_AuraContainer")
+			end
+			ok = AO.IsAddOnLoaded("Blizzard_AuraContainer") and AuraContainerSortMethod ~= nil
+		end
+		containersAvailable = ok and true or false
+	end
+	return containersAvailable
+end
+
+--- ONE CONTAINER, BUILT THE ONE WAY THAT WORKS. Everything that shows the
+--  client's auras comes through here, so the order and the rules live in one
+--  place (2026-10-23: a raid probe built its own copy, skipped the button
+--  size, and drew nothing through eight in-game runs).
+--
+--  spec = {
+--    size    = the button's side, set FIRST in every group's initializer -
+--              the engine only anchors its buttons, and an unsized one draws
+--              nothing (Blizzard_CustomAuraContainer.lua:794-797);
+--    point   = { point, relativeTo, relativePoint, x, y } for the container;
+--    anchor  = the flow's anchor corner;
+--    growth  = { horizontal, vertical } as AnchorUtil.FlowDirection;
+--    lineSize = the maximum line length (nil: unlimited);
+--    alpha   = the container's own alpha;
+--    groups  = { { key, filter, maxFrameCount, layout, init = fn(button) } };
+--    unit    = the token, bound LAST: binding is what registers UNIT_AURA, for
+--              the groups there are.
+--  }
+--
+--  Returns the container (nil if the client would not make one) and a list of
+--  what failed, each "what: why". Nothing here throws.
+function W.CreateAuraContainer(parent, spec)
+	local failed = {}
+	local ok, c = pcall(CreateFrame, "AuraContainer", nil, parent, "CustomAuraContainerTemplate")
+	if not ok or not c then
+		failed[#failed + 1] = "container: " .. tostring(c)
+		return nil, failed
+	end
+
+	if spec.alpha then c:SetAlpha(spec.alpha) end
+	-- A rect from the start, which the engine replaces on every layout.
+	c:SetSize(1, 1)
+	if spec.point then c:SetPoint(unpack(spec.point)) end
+	if spec.anchor then c:SetFlowLayoutAnchorPoint(spec.anchor) end
+	if spec.growth then c:SetFlowLayoutGrowthDirection(spec.growth[1], spec.growth[2]) end
+	c:SetFlowLayoutMaximumLineSize(spec.lineSize)
+
+	local size = spec.size
+	for _, g in ipairs(spec.groups or {}) do
+		local init = g.init
+		local okG, err = pcall(c.AddAuraGroup, c, g.key, g.filter, {
+			maxFrameCount = g.maxFrameCount,
+			layout = g.layout,
+			initializeFrame = function(button)
+				button:SetSize(size, size)
+				if init then init(button) end
+			end,
+		})
+		if not okG then failed[#failed + 1] = g.key .. ": " .. tostring(err) end
+	end
+
+	if spec.unit then
+		c:SetUnit(spec.unit)
+		c:UpdateAllAuras()
+	end
+	return c, failed
+end
+
 
 -- Both of these are nil-tolerant on purpose. They are called from skin and
 -- config passes that walk whole collections of widgets, and not every member of

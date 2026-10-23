@@ -42,7 +42,7 @@ local function usage()
 		A.Hi("/lattice world") .. " retract  ·  the World trunk up into the pill, or back down",
 		A.Hi("/lattice dump") .. " <FrameName>  ·  what a Blizzard frame is made of",
 		A.Hi("/lattice threat") .. " probe  ·  what the threat API answers, in a box you can copy",
-		A.Hi("/lattice probe") .. " <snippet|header>  ·  raid-frame probes: secure snippets, a bare raid header",
+		A.Hi("/lattice probe") .. " header  ·  a bare raid header with the client's aura icons",
 		A.Hi("/lattice resources") .. " demo  ·  step the class resource tray through every class",
 		A.Hi("/lattice ifec") .. " [reset]  ·  content packs, what is playing, forget history",
 		A.Hi("/lattice errors") .. " <diag|clear>  ·  errors, or diag, in a box you can copy out of",
@@ -1718,70 +1718,6 @@ handlers.threat = function(arg)
 	A:Print(A.Hi("/lattice threat probe") .. "  ·  what the threat API answers")
 end
 
---- WHETHER SECURE SNIPPETS RUN on this client: the code a group header, a
---  pinned raid cell or a lens switch would run in a fight. The Forever beta
---  shipped without the compiler (loadstring_untainted), so every snippet
---  failed in silence; the 2026-10-23 dump looks fixed (RestrictedExecution
---  .lua:22, 79), and nothing of ours has seen one run. A raid-frames probe,
---  to come out once answered.
---
---  Two routes, each judged by what it WROTE rather than by whether it threw -
---  a snippet that never runs reports no error at all (see the WrapScript
---  note in project memory). Execute runs a body once; _onattributechanged is
---  the handler a header's attribute changes go through. Out of combat only:
---  a secure frame's attributes cannot be set from here in a fight.
-local probeFrames = {}
-
-local function SnippetProbe()
-	local out = {}
-	local function line(s) out[#out + 1] = tostring(s) end
-	line("snippet probe  ·  " .. tostring(A.version) .. "  ·  build "
-		.. tostring((GetBuildInfo())))
-
-	if InCombatLockdown() then
-		line("in combat: run it again out of combat")
-	else
-		local h = probeFrames.exec
-			or CreateFrame("Frame", nil, UIParent, "SecureHandlerBaseTemplate")
-		probeFrames.exec = h
-		h:SetAttribute("probe-out", nil)
-		if type(h.Execute) ~= "function" then
-			line("Execute: no such method on SecureHandlerBaseTemplate")
-		else
-			local ok, err = pcall(h.Execute, h,
-				[[ self:SetAttribute("probe-out", 6 * 7) ]])
-			local got = h:GetAttribute("probe-out")
-			line("Execute: " .. (got == 42 and "RAN" or "DID NOT RUN")
-				.. "  (wrote " .. tostring(got)
-				.. (ok and "" or ("; error " .. tostring(err))) .. ")")
-		end
-
-		local a = probeFrames.attr
-			or CreateFrame("Frame", nil, UIParent, "SecureHandlerAttributeTemplate")
-		probeFrames.attr = a
-		a:SetAttribute("probe-echo", nil)
-		-- A new value each run, so an echo left from the last one cannot pass.
-		local sent = "echo-" .. tostring(GetTime())
-		local ok, err = pcall(function()
-			a:SetAttribute("_onattributechanged", [[
-				if name == "probe-in" then self:SetAttribute("probe-echo", value) end
-			]])
-			a:SetAttribute("probe-in", sent)
-		end)
-		local got = a:GetAttribute("probe-echo")
-		line("_onattributechanged: " .. (got == sent and "RAN" or "DID NOT RUN")
-			.. "  (echoed " .. tostring(got)
-			.. (ok and "" or ("; error " .. tostring(err))) .. ")")
-	end
-
-	local text = table.concat(out, string.char(10))
-	if A.Errors and A.Errors.ShowText then
-		A.Errors:ShowText((A.Errors.Header and A.Errors:Header() or "") .. text)
-	else
-		for _, l in ipairs(out) do A:Print(l) end
-	end
-end
-
 --- A BARE RAID HEADER, to see what the client will do for one of ours: does
 --  a SecureGroupHeaderTemplate built from addon code make a cell for every
 --  member, and does each get the client's own debuff icons through
@@ -2015,16 +1951,13 @@ local function HeaderProbe()
 	end
 end
 
+-- The snippet probe that stood here is gone: both routes ran on Forever
+-- 1.60.1 (2026-10-23), recorded in project memory (secure-handler-wraps).
 handlers.probe = function(arg)
-	if arg == "snippet" then
-		SnippetProbe()
-		return
-	end
 	if arg == "header" then
 		HeaderProbe()
 		return
 	end
-	A:Print(A.Hi("/lattice probe snippet") .. "  ·  do secure snippets run on this client")
 	A:Print(A.Hi("/lattice probe header") .. "  ·  a bare raid header with the client's debuff icons; again to remove")
 end
 

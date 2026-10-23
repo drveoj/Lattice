@@ -733,7 +733,10 @@ local function newTexture(owner, layer, sub)
 	function t:SetSnapToPixelGrid(v) self.__snap = v end
 	function t:SetTexelSnappingBias(v) self.__bias = v end
 	function t:SetVertexColor(r, g, b, a)
-		if type(r) ~= "number" or type(g) ~= "number" or type(b) ~= "number" then
+		-- A secret colour is allowed on Forever (AllowedWhenTainted): it is how
+		-- a health curve's answer reaches the bar unread.
+		local function ok(v) return type(v) == "number" or (issecretvalue and issecretvalue(v)) end
+		if not (ok(r) and ok(g) and ok(b)) then
 			fail("SetVertexColor got non-number (" .. tostring(r) .. "," .. tostring(g) .. "," .. tostring(b) .. ")")
 		end
 		self.__color = { r, g, b, a }
@@ -882,8 +885,24 @@ local function newFontString(owner, layer)
 		return o[1], o[2]
 	end
 	function f:SetTextColor(r, g, b, a)
-		if type(r) ~= "number" then fail("SetTextColor got " .. tostring(r)) end
+		-- Secret allowed on Forever (SimpleFontStringAPIDocumentation.lua:675-678).
+		if type(r) ~= "number" and not (issecretvalue and issecretvalue(r)) then
+			fail("SetTextColor got " .. tostring(r))
+		end
 		self.__color = { r, g, b, a }
+	end
+	--- The client formats it; a secret argument makes the text secret
+	--  (SetFormattedText is AllowedWhenTainted, :539-542). Plain arguments
+	--  format as Lua would.
+	function f:SetFormattedText(fmt, ...)
+		for i = 1, select("#", ...) do
+			local v = select(i, ...)
+			if issecretvalue and issecretvalue(v) then
+				self:SetText(_G.__SecretStandIn())
+				return
+			end
+		end
+		self:SetText(string.format(fmt, ...))
 	end
 	function f:GetTextColor()
 		local c = self.__color or { 1, 1, 1, 1 }
@@ -5592,6 +5611,53 @@ function UnitClass(u) local d = units[u]; return d and d.class, d and d.classTok
 function UnitCreatureType(u) return units[u] and units[u].creature end
 function UnitHealth(u) return units[u] and units[u].hp or 0 end
 function UnitHealthMax(u) return units[u] and units[u].hpMax or 0 end
+
+--- RANGE. Plain on Era: (inRange, checked), with `checked` false for a unit
+--  the client does not measure. SecretReturns on Forever
+--  (UnitDocumentation.lua:1700-1714), so there both come back as stand-ins
+--  that throw on any test.
+function UnitInRange(u)
+	local d = units[u]
+	if _G.__flavour == "camelot" then
+		return _G.__SecretStandIn(), _G.__SecretStandIn()
+	end
+	if not d then return false, false end
+	return d.inRange ~= false, d.rangeChecked ~= false
+end
+
+-- HEALTH ON A CURVE, Forever only. The client evaluates the curve on the
+-- unit's health and hands back the answer secret (UnitHealthPercent is
+-- SecretReturns, UnitDocumentation.lua:1506-1523): a colour from a colour
+-- curve, a number otherwise. The curve is recorded on the call so a check can
+-- ask what was built.
+if _G.__flavour == "camelot" then
+	Enum.LuaCurveType = { Linear = 0, Step = 1, Cosine = 2, Cubic = 3 }
+	local function Curve(kind)
+		local c = { kind = kind, points = {} }
+		function c:SetType(t) self.type = t end
+		function c:AddPoint(x, y)
+			if type(x) ~= "number" then error("AddPoint: x must be a number", 2) end
+			self.points[#self.points + 1] = { x, y }
+		end
+		return c
+	end
+	C_CurveUtil = {
+		CreateColorCurve = function() return Curve("colour") end,
+		CreateCurve = function() return Curve("number") end,
+	}
+	CurveConstants = { ScaleTo100 = C_CurveUtil.CreateCurve() }
+	_G.__healthCurveCalls = {}
+	function UnitHealthPercent(u, usePredicted, curve)
+		_G.__healthCurveCalls[#_G.__healthCurveCalls + 1] = { unit = u, curve = curve }
+		if curve and curve.kind == "colour" then
+			local s = _G.__SecretStandIn
+			local r, g, b, a = s(), s(), s(), s()
+			return { GetRGBA = function() return r, g, b, a end,
+				GetRGB = function() return r, g, b end }
+		end
+		return _G.__SecretStandIn()
+	end
+end
 -- SecretReturns on camelot, always, so there the mock never hands back anything
 -- that can be read: a fresh stand-in per call, kept so a test can see it reached
 -- the bar untouched. Era answers a plain number.
@@ -6159,6 +6225,11 @@ if _G.__flavour == "camelot" then
 			for i = 1, 10 do
 				local b = AuraButton(self, g)
 				if opts.initializeFrame then opts.initializeFrame(b) end
+				-- AN UNSIZED BUTTON DRAWS NOTHING: the engine's layout only
+				-- anchors it (Blizzard_CustomAuraContainer.lua:794-797), and
+				-- after this its size cannot be set while auras are secret.
+				-- Recorded, and every container is held to it below.
+				b.__sizedInInit = (b.__w or 0) > 0 and (b.__h or 0) > 0
 				Restrict(b)
 				g.buttons[i] = b
 			end
@@ -35838,35 +35909,17 @@ section("threat: the probe reads the client rather than the plan", function()
 	A.Errors.ShowText = realShow
 end)
 
-section("probe: do secure snippets run on this client", function()
-	-- A RAID-FRAMES PROBE (2026-10-23). There is no restricted environment in
-	-- here, so whether a snippet RUNS is the client's to answer - what is
-	-- checked is that the report comes back, names both routes, never throws,
-	-- and in a fight says to come back rather than touching a secure frame.
+section("probe: a bare raid header", function()
+	-- A RAID-FRAMES PROBE (2026-10-23), kept for a re-run at Forever's launch.
+	-- Up, reported, and down again on a second run; whether the client fills
+	-- it is the client's to answer. (The snippet probe beside it is gone: both
+	-- routes ran on Forever 1.60.1.)
 	local shown = nil
 	local realShow = A.Errors.ShowText
 	A.Errors.ShowText = function(_, text) shown = text return end
 	local run = SlashCmdList["AETHERUI"]
 
-	local ok, err = pcall(run, "probe snippet")
-	check(ok and shown ~= nil, "the snippet probe reports without throwing ("
-		.. tostring(err) .. ")")
-	check(shown and shown:find("Execute:", 1, true)
-		and shown:find("_onattributechanged:", 1, true),
-		"and names both routes it tried")
-
-	_G.__inCombat = true
-	shown = nil
-	run("probe snippet")
-	check(shown and shown:find("in combat", 1, true)
-		and not shown:find("Execute:", 1, true),
-		"in a fight it touches nothing and says to run it again after")
-	_G.__inCombat = false
-
-	-- THE BARE RAID HEADER: up, reported, and down again on a second run.
-	-- Whether the client fills it is the client's to answer.
-	shown = nil
-	ok, err = pcall(run, "probe header")
+	local ok, err = pcall(run, "probe header")
 	check(ok and shown and shown:find("cells:", 1, true)
 		and shown:find("AuraContainer", 1, true),
 		"the header probe goes up and reports its cells (" .. tostring(err) .. ")")
@@ -35885,6 +35938,109 @@ section("probe: do secure snippets run on this client", function()
 	_G.__inCombat = false
 
 	A.Errors.ShowText = realShow
+end)
+
+section("raid groundwork: one container builder, health and range unread", function()
+	-- PHASE 0 OF THE RAID BUILD (2026-10-23). Helpers the raid cells will use,
+	-- held here before anything draws with them.
+	local W = A.Widgets
+
+	-- EVERY BUTTON THE CLIENT MADE FOR US WAS SIZED AS IT WAS MADE. The rule a
+	-- raid probe broke for eight in-game runs; the aura trays and anything
+	-- else built since are held to it here.
+	if _G.__flavour == "camelot" then
+		local unsized, seen = 0, 0
+		for _, c in ipairs(_G.__auraContainers) do
+			for _, g in ipairs(c.__groupOrder) do
+				for _, b in ipairs(g.buttons) do
+					seen = seen + 1
+					if not b.__sizedInInit then unsized = unsized + 1 end
+				end
+			end
+		end
+		check(seen > 0 and unsized == 0,
+			"every aura button the client made was sized in its initializer ("
+			.. unsized .. " of " .. seen .. " unsized)")
+
+		-- The builder sizes first even when the caller's own setup does not.
+		local host = CreateFrame("Frame", nil, UIParent)
+		local c, failed = W.CreateAuraContainer(host, {
+			size = 18, anchor = "TOPLEFT",
+			groups = { { key = "debuffs", filter = "HARMFUL|RAID", maxFrameCount = 3,
+				init = function() end } },
+			unit = "player",
+		})
+		local b = c and c.__groups.debuffs.buttons[1]
+		check(c and #failed == 0 and b and b.__w == 18 and b.__sizedInInit,
+			"W.CreateAuraContainer sizes each button before the caller's setup ("
+			.. tostring(b and b.__w) .. ")")
+		check(c and c.__unit == "player" and not c.__unitBeforeGroups
+			and c.__refreshes > 0,
+			"and binds the unit after the groups, then refreshes")
+		local c2, failed2 = W.CreateAuraContainer(host, {
+			size = 18, groups = { { key = "x", filter = "NOT_A_FILTER" } } })
+		check(c2 and #failed2 == 1 and failed2[1]:find("^x: "),
+			"a group the client refuses is reported, not thrown ("
+			.. tostring(failed2[1]) .. ")")
+	else
+		local c, failed = W.CreateAuraContainer(UIParent, { size = 18 })
+		check(c == nil and #failed == 1,
+			"on Era the builder answers 'no container' rather than throwing")
+	end
+
+	-- HEALTH AND RANGE. A unit at 30%, out of range, measured.
+	local saved = _G.__units.raid1
+	_G.__units.raid1 = { exists = true, name = "Kindar", hp = 30, hpMax = 100,
+		inRange = false, rangeChecked = true }
+	local CORAL, GREEN = { 0.94, 0.43, 0.35 }, { 0.37, 0.78, 0.53 }
+	local STOPS = { { 0, CORAL }, { 0.4, GREEN } }
+	local tex = UIParent:CreateTexture()
+	local fs = W.Text(UIParent, "unitName")
+	local cell = CreateFrame("Frame", nil, UIParent)
+
+	if _G.__flavour == "camelot" then
+		wipe(_G.__healthCurveCalls)
+		local ok, err = pcall(W.HealthColor, tex, "raid1", STOPS)
+		local call = _G.__healthCurveCalls[1]
+		check(ok and call and call.curve.kind == "colour"
+			and call.curve.type == Enum.LuaCurveType.Step and #call.curve.points == 2
+			and issecretvalue(tex.__color[1]),
+			"Forever: the health colour comes from a step curve the client"
+			.. " evaluates, and reaches the texture unread (" .. tostring(err) .. ")")
+		W.HealthColor(tex, "raid1", STOPS)
+		check(_G.__healthCurveCalls[2].curve == call.curve,
+			"and the curve is built once per stops table")
+
+		ok, err = pcall(W.HealthPercentText, fs, "raid1", 0.4, CORAL)
+		check(ok and issecretvalue(fs:GetText()) and issecretvalue(fs.__color[4]),
+			"the low-health number is written and hidden by the client, never"
+			.. " compared (" .. tostring(err) .. ")")
+
+		ok, err = pcall(W.RangeAlpha, cell, "raid1", 0.45)
+		check(ok and issecretvalue(cell.__alphaFlag),
+			"range goes to SetAlphaFromBoolean untested (" .. tostring(err) .. ")")
+	else
+		W.HealthColor(tex, "raid1", STOPS)
+		check(tex.__color[1] == CORAL[1], "Era: 30% health takes the coral stop")
+		_G.__units.raid1.hp = 80
+		W.HealthColor(tex, "raid1", STOPS)
+		check(tex.__color[1] == GREEN[1], "and 80% the green one")
+
+		_G.__units.raid1.hp = 30
+		W.HealthPercentText(fs, "raid1", 0.4, CORAL)
+		check(fs:GetText() == "30", "the number shows below 40% (" .. tostring(fs:GetText()) .. ")")
+		_G.__units.raid1.hp = 40
+		W.HealthPercentText(fs, "raid1", 0.4, CORAL)
+		check(fs:GetText() == "", "and not from 40% up")
+
+		W.RangeAlpha(cell, "raid1", 0.45)
+		check(cell:GetAlpha() == 0.45, "out of range, measured: faded")
+		_G.__units.raid1.rangeChecked = false
+		W.RangeAlpha(cell, "raid1", 0.45)
+		check(cell:GetAlpha() == 1,
+			"not measured is not far away: a unit the client does not check stays up")
+	end
+	_G.__units.raid1 = saved
 end)
 
 section("threat: one place decides which tier a unit is in", function()

@@ -1150,20 +1150,10 @@ local FOREVER_TRAYS = {
 }
 Aur.FOREVER_TRAYS = FOREVER_TRAYS
 
---- Does this client fill aura trays for us? Asked of the client, not the
---  flavour: Classic Era ships no Blizzard_AuraContainer, so the load fails.
+--- Does this client fill aura trays for us? Asked in one place for every
+--  module that shows the client's auras - see W.AuraContainersAvailable.
 function Aur.ContainersAvailable()
-	if Aur._containers == nil then
-		local AO, ok = C_AddOns, false
-		if AO and AO.LoadAddOn and AO.IsAddOnLoaded then
-			if not AO.IsAddOnLoaded("Blizzard_AuraContainer") then
-				pcall(AO.LoadAddOn, "Blizzard_AuraContainer")
-			end
-			ok = AO.IsAddOnLoaded("Blizzard_AuraContainer") and AuraContainerSortMethod ~= nil
-		end
-		Aur._containers = ok and true or false
-	end
-	return Aur._containers
+	return W.AuraContainersAvailable()
 end
 
 --- A rule formatter the client runs on the remaining time or stack count,
@@ -1225,7 +1215,8 @@ local function Initializer(lookKey, tray, F)
 	return function(button)
 		local ok, err = pcall(function()
 			local c = Palette.c
-			button:SetSize(SQ, SQ)
+			-- Sized already: W.CreateAuraContainer does that first, for every
+			-- container, before this runs.
 			if look.alpha then button:SetAlpha(look.alpha) end
 
 			-- The edge is the square itself in the edge colour, with the icon on
@@ -1304,38 +1295,32 @@ local function BuildTray(def, F)
 	host:SetSize(CLIP_PAD * 2 + COMBAT * SQ_STEP - SQ_GAP, CLIP_PAD * 2 + SQ)
 	t.host = host
 
-	local ok, c = pcall(CreateFrame, "AuraContainer", nil, host, "CustomAuraContainerTemplate")
-	if not ok or not c then
-		t.failed[#t.failed + 1] = "container: " .. tostring(c)
-		return t
-	end
-	t.container = c
-
-	-- The tray's own strength goes here, not on the host: the host's alpha
-	-- belongs to the fader when the unit frames are off.
-	c:SetAlpha(def.alpha or 1)
-	c:SetSize(1, 1)
-	c:SetPoint(t.corner, host, t.corner,
-		t.mirror and -CLIP_PAD or CLIP_PAD, t.above and CLIP_PAD or -CLIP_PAD)
 	local FD = AnchorUtil.FlowDirection
-	c:SetFlowLayoutAnchorPoint(t.corner)
-	c:SetFlowLayoutGrowthDirection(t.mirror and FD.Left or FD.Right,
-		t.above and FD.Up or FD.Down)
-	c:SetFlowLayoutMaximumLineSize(REST * SQ_STEP - SQ_GAP)
-
+	local groups = {}
 	for i, g in ipairs(def.groups) do
-		local okG, err = pcall(c.AddAuraGroup, c, g.key, g.filter, {
-			maxFrameCount = REST,
-			initializeFrame = Initializer(g.look, t, F),
+		groups[i] = { key = g.key, filter = g.filter, maxFrameCount = REST,
+			init = Initializer(g.look, t, F),
 			layout = { elementSpacing = SQ_GAP, lineSpacing = WRAP_GAP,
-				groupLineSpacing = WRAP_GAP, layoutIndex = i },
-		})
-		if not okG then t.failed[#t.failed + 1] = g.key .. ": " .. tostring(err) end
+				groupLineSpacing = WRAP_GAP, layoutIndex = i } }
 	end
 
-	-- The unit LAST: it is what registers UNIT_AURA, for the groups there are.
-	c:SetUnit(def.unit)
-	c:UpdateAllAuras()
+	-- Through the one builder every client-filled row uses: it sizes each
+	-- button first and binds the unit last.
+	local c, failed = W.CreateAuraContainer(host, {
+		size = SQ,
+		-- The tray's own strength goes on the container, not the host: the
+		-- host's alpha belongs to the fader when the unit frames are off.
+		alpha = def.alpha or 1,
+		point = { t.corner, host, t.corner,
+			t.mirror and -CLIP_PAD or CLIP_PAD, t.above and CLIP_PAD or -CLIP_PAD },
+		anchor = t.corner,
+		growth = { t.mirror and FD.Left or FD.Right, t.above and FD.Up or FD.Down },
+		lineSize = REST * SQ_STEP - SQ_GAP,
+		groups = groups,
+		unit = def.unit,
+	})
+	for _, f in ipairs(failed) do t.failed[#t.failed + 1] = f end
+	t.container = c
 	return t
 end
 
