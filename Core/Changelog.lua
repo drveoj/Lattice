@@ -38,6 +38,24 @@ local ADDON, A = ...
 --  rather than showing yesterday's news as today's.
 A.CHANGELOG = {
 	{
+		version = "2.1.0",
+		date    = "2026-10-24",
+		lines   = {
+			"Raid frames. Everyone in your raid shows as a glass cell, group by group, with their class, name and health, and a number when they drop below 40%. Dead and offline players are struck through, and players out of your spells' range fade.",
+			"Raid cells show every debuff, the ones you can dispel first, and the buffs you cast. A tank shows a shield and a healer a cross, as on your party frames.",
+			"Click a cell to target that player, right-click for their menu. Your target and anyone pulling threat get an outline.",
+			"Tanks are pinned above the raid as full frames. You can pin the healers and the boss's target too, and right-click anyone in the raid to pin or unpin them by name, up to five in all.",
+			"Settings > Raid has the pins, groups as rows or columns, cell size, range fade and raid marks, with a live preview. The raid hangs from your player frame; move it in unlock mode.",
+			"When your party becomes a raid, the party frames slide into it, and back out when it drops to five.",
+			"Running the group lives on the Toolbox. Its Party node reads Raid in a raid. Assistants get the marks, ready check, countdown and role check, the raid leader gets Everyone is Assistant, and the heading counts who is alive in each role.",
+			"Switch off Lattice's party or raid frames and Blizzard's come back. Switch off the Toolbox and Blizzard's raid tab comes back.",
+			"Settings is always second to last on the Toolbox, above What's new.",
+			"Fixed: the target of target frame stayed on screen after you left a dungeon.",
+			"Fixed: tooltips for some addon buttons on the Toolbox, Leatrix Plus for one, were the wrong size.",
+			"Fixed: action bars 1 and 2 had a thinner border than your other bars.",
+		},
+	},
+	{
 		version = "2.0.2",
 		date    = "2026-10-14",
 		lines   = {
