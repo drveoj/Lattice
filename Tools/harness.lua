@@ -3467,13 +3467,14 @@ if _G.__flavour == "camelot" then
 			error("GetAuraDataByIndex(): Auras cannot be accessed when secret"
 				.. " while tainted by 'AetherUI'", 2)
 		end
-		local name, icon, count, auraType, duration, expiration, _,
+		local name, icon, count, auraType, duration, expiration, caster,
 			_, _, _, _, _, castByPlayer = UnitAura(unit, index, filter)
 		if not name then return nil end
 		return {
 			name = name, icon = icon, applications = count,
 			dispelName = auraType, duration = duration,
 			expirationTime = expiration, isFromPlayerOrPlayerPet = castByPlayer,
+			sourceUnit = caster,
 		}
 	end
 end
@@ -36671,6 +36672,9 @@ section("raid frames: the weave", function()
 				{ "Curse of Weakness", 136138, 0, "Curse", 10, nil, "boss1", false, nil, true },
 			},
 			HELPFUL = {
+				-- Thrall's, through the PLAYER filter as it came on Era (Joe,
+				-- 2026-10-24): flagged, but its caster is not you.
+				{ "Warchief's Blessing", 135759, 0, nil, 3600, nil, nil, true },
 				{ "Renew", 135953, 0, "Magic", 15, nil, "player", true },
 				{ "Fortitude", 135987, 0, "Magic", 1800, nil, "raid2", false },
 			},

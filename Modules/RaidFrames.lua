@@ -429,11 +429,19 @@ local function UpdateIcons(cell)
 			if not name then break end
 			if not dispel[name] then add(tex) end
 		end
+		-- YOURS BY THE CASTER, as Blizzard's own raid frames decide it
+		-- (AuraUtil.ShouldDisplayBuff, :307: you, your pet, your vehicle).
+		-- The PLAYER filter alone let Thrall's Warchief's Blessing through
+		-- onto a warrior's cell (Joe, 2026-10-24).
+		local function yours(source)
+			if not source or A.IsSecret(source) then return false end
+			return source == "player" or source == "pet" or source == "vehicle"
+		end
 		for i = 1, 40 do
 			if n >= ICONS then break end
-			local name, tex = get(unit, i, "HELPFUL|PLAYER")
+			local name, tex, _, _, _, _, _, source = get(unit, i, "HELPFUL|PLAYER")
 			if not name then break end
-			add(tex)
+			if yours(source) then add(tex) end
 		end
 	end
 	for i = n + 1, ICONS do cell.icons[i]:Hide() end

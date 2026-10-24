@@ -129,12 +129,18 @@ function Aur.AurasRestricted()
 	return false
 end
 
---- Returns: name, texture, count, auraType, duration, expirationTime, isMine
+--- Returns: name, texture, count, auraType, duration, expirationTime, isMine,
+--  source
 --
 --  "Is this mine" comes from isFromPlayerOrPlayerPet / castByPlayer rather than
 --  comparing sourceUnit to "player", because sourceUnit is nil for a fair few
 --  auras and the comparison then quietly reports every one of them as someone
 --  else's. Falls back to the comparison only when the flag is absent.
+--
+--  `source` is the caster's unit token, nil when the client gives none, for
+--  a caller that has to be strict - the raid cells' "buffs you cast", where the
+--  PLAYER filter let an NPC's Warchief's Blessing through on Era (Joe,
+--  2026-10-24).
 local function GetAura(unit, index, filter)
 	-- The read is REFUSED, not merely secret - see Aur.AurasRestricted. Answer
 	-- "no aura here" and let every caller's existing end-of-list handling do the
@@ -153,7 +159,7 @@ local function GetAura(unit, index, filter)
 		local mine = d.isFromPlayerOrPlayerPet
 		if mine == nil then mine = (d.sourceUnit == "player" or d.sourceUnit == "pet") end
 		return d.name, d.icon, d.applications or d.charges or 0, d.dispelName,
-			d.duration or 0, d.expirationTime or 0, mine
+			d.duration or 0, d.expirationTime or 0, mine, d.sourceUnit
 	end
 	if UnitAura then
 		local name, texture, count, auraType, duration, expiration, caster,
@@ -161,7 +167,7 @@ local function GetAura(unit, index, filter)
 		if not name then return nil end
 		local mine = castByPlayer
 		if mine == nil then mine = (caster == "player" or caster == "pet") end
-		return name, texture, count, auraType, duration, expiration, mine
+		return name, texture, count, auraType, duration, expiration, mine, caster
 	end
 	return nil
 end
