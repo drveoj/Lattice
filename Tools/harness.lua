@@ -13679,6 +13679,28 @@ if UF.tot then
 	check(tot.name:GetText() == "Watermule",
 		"the capsule follows the target's target without your target changing ("
 		.. tostring(tot.name:GetText()) .. ")")
+
+	-- LEAVING A DUNGEON: the target is lost in the loading screen and the ToT
+	-- was never told - it stayed up on the instance's mob (Joe, 2026-10-24).
+	local totUnit = _G.__units.targettarget
+	local keepTarget = _G.__units.target
+	check(tot.glass:IsShown(), "with a target's target, the ToT capsule is up")
+	-- GONE stated outright: an unset targettarget is the mock's alias for the
+	-- player (TOKEN_ALIAS above), where the client has none without a target.
+	local GONE = { exists = false }
+	_G.__units.target, _G.__units.targettarget = nil, GONE
+	fire("PLAYER_ENTERING_WORLD")
+	check(not tot.glass:IsShown(), "zoning out with no target takes the ToT down")
+	_G.__units.target = keepTarget
+
+	-- AND WITH NO EVENT AT ALL: gone within a reconcile tick.
+	_G.__units.targettarget = totUnit
+	fire("UNIT_TARGET", "target")
+	check(tot.glass:IsShown(), "the ToT is up again")
+	_G.__units.targettarget = GONE
+	tick(0.11)
+	check(not tot.glass:IsShown(),
+		"a target's target that vanishes with no event is gone within a tick")
 	_G.__units.targettarget = nil
 end
 check(UF.player:IsShown() and UF.player.name:GetText() == "Palabras",

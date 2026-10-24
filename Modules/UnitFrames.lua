@@ -849,9 +849,15 @@ UF.UpdateAll = UpdateAll
 --  the final zero when something dies. Two UnitHealth calls a tick is nothing
 --  next to a target frame that lies about whether the thing in front of you is
 --  still alive.
+--
+--  AND A UNIT THAT HAS GONE takes its capsule with it, event or none: the
+--  target of target stayed up after leaving a dungeon, showing a mob from the
+--  instance (Joe, 2026-10-24). Only when the glass is up, so a capsule already
+--  down is not written to ten times a second.
 local function Reconcile()
 	for _, f in ipairs(UF.frames) do
 		local unit = f.unit
+		if f.glass:IsShown() and not UnitExists(unit) then SetVisible(f, false) end
 		if f:IsShown() and UnitExists(unit) then
 			-- A SECRET CANNOT BE COMPARED, and this runs ten times a second - so
 			-- an unguarded `~=` here is not one error, it is a wall of them.
@@ -1300,11 +1306,13 @@ function UF:RegisterEvents()
 	A:RegisterEvent(self, "PLAYER_LEVEL_UP", function()
 		UpdateName(UF.player)
 	end)
+	-- EVERY CAPSULE ON A ZONE CHANGE, not a chosen three: the target is lost
+	-- in the loading screen, and the target of target and the pet were never
+	-- told - the ToT stayed up on a mob from the instance just left (Joe,
+	-- 2026-10-24).
 	A:RegisterEvent(self, "PLAYER_ENTERING_WORLD", function()
 		UF:HideBlizzard()
-		UpdateAll(UF.player)
-		UpdateAll(UF.target)
-		if UF.focus then UpdateAll(UF.focus) end
+		for _, f in ipairs(UF.frames) do UpdateAll(f) end
 		UF:MeasureSpine()
 		UF:SpineTarget()
 	end)
