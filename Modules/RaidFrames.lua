@@ -86,8 +86,17 @@ local NUMBER, NUMBER_GAP = 14, 5
 local ROWS_X = BOND + NUMBER + NUMBER_GAP
 local ROOT = 8   -- the root node, r = 4
 
-local ICON = 12   -- a dispellable debuff, the client's own icon
-local ICONS = 3
+local ICON = 12   -- an aura, the client's own icon
+local ICONS = 3   -- in all, whatever they are
+
+-- WHAT A CELL SHOWS (Joe, 2026-10-24): every debuff, the ones you can dispel
+-- first, then the buffs you cast - HoTs and shields. Not everyone's buffs:
+-- forty cells of Fortitude is noise. In this order, three at most.
+local AURA_GROUPS = {
+	{ key = "dispel",  filter = "HARMFUL|RAID" },
+	{ key = "debuffs", filter = "HARMFUL|!RAID" },
+	{ key = "mine",    filter = "HELPFUL|PLAYER" },
+}
 
 -- Fixed colours, as the handoff fixes them. Threat pulling is the danger
 -- token (#ff8a4a, and Ruby moves it, as the nameplates' does); pulled is the
@@ -153,14 +162,30 @@ end
 
 local function BuildIcons(cell)
 	if W.AuraContainersAvailable() then
+		-- THREE IN ALL, by the trays' method (Modules/Auras.lua, BuildTray): the
+		-- groups flow along one line in their order - a group starts a new line
+		-- only when told to (forceNewLine, false by default,
+		-- Blizzard_AuraContainerShared.lua:161) - and whatever passes the third
+		-- wraps onto a line above, outside a host that clips it.
+		local host = CreateFrame("Frame", nil, cell)
+		host:SetClipsChildren(true)
+		host:SetSize(ICONS * (ICON + 1) - 1, ICON)
+		host:SetPoint("BOTTOMRIGHT", cell, "BOTTOMRIGHT", -3, 3)
+		cell.auraHost = host
 		local FD = AnchorUtil.FlowDirection
-		local c, failed = W.CreateAuraContainer(cell, {
+		local groups = {}
+		for i, g in ipairs(AURA_GROUPS) do
+			groups[i] = { key = g.key, filter = g.filter, maxFrameCount = ICONS,
+				layout = { elementSpacing = 1, lineSpacing = 2, groupLineSpacing = 2,
+					layoutIndex = i }, init = InitIcon }
+		end
+		local c, failed = W.CreateAuraContainer(host, {
 			size = ICON,
-			point = { "BOTTOMRIGHT", cell, "BOTTOMRIGHT", -3, 3 },
+			point = { "BOTTOMRIGHT", host, "BOTTOMRIGHT", 0, 0 },
 			anchor = "BOTTOMRIGHT",
 			growth = { FD.Left, FD.Up },
-			groups = { { key = "dispel", filter = "HARMFUL|RAID", maxFrameCount = ICONS,
-				layout = { elementSpacing = 1 }, init = InitIcon } },
+			lineSize = ICONS * (ICON + 1) - 1,
+			groups = groups,
 		})
 		cell.auras = c
 		if failed[1] then RF.auraFailures = failed end
@@ -340,22 +365,41 @@ local function UpdateHealth(cell)
 	W.HealthPercentText(cell.low, unit, LOW, LOW_INK)
 end
 
+--- Era: the same three groups from the plain reads. It has no `!RAID`, so the
+--  other debuffs are every harmful one not already shown as yours to dispel.
 local function UpdateIcons(cell)
 	if cell.auras or not cell.icons then return end
 	local unit = cell.unit
 	local get = A:GetModule("auras") and A:GetModule("auras").GetAura
 	local n = 0
+	local function add(tex)
+		n = n + 1
+		cell.icons[n]:SetTexture(tex)
+		cell.icons[n]:Show()
+	end
 	if unit and get then
+		local dispel = {}
 		for i = 1, 40 do
+			if n >= ICONS then break end
 			local name, tex = get(unit, i, "HARMFUL|RAID")
 			if not name then break end
-			n = n + 1
-			if n > ICONS then break end
-			cell.icons[n]:SetTexture(tex)
-			cell.icons[n]:Show()
+			dispel[name] = true
+			add(tex)
+		end
+		for i = 1, 40 do
+			if n >= ICONS then break end
+			local name, tex = get(unit, i, "HARMFUL")
+			if not name then break end
+			if not dispel[name] then add(tex) end
+		end
+		for i = 1, 40 do
+			if n >= ICONS then break end
+			local name, tex = get(unit, i, "HELPFUL|PLAYER")
+			if not name then break end
+			add(tex)
 		end
 	end
-	for i = math.min(n, ICONS) + 1, ICONS do cell.icons[i]:Hide() end
+	for i = n + 1, ICONS do cell.icons[i]:Hide() end
 end
 
 local function UpdateName(cell)

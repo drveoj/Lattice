@@ -36513,21 +36513,43 @@ section("raid frames: the weave", function()
 	fire("UNIT_THREAT_SITUATION_UPDATE", "raid1")
 	check(A1._edgeToken == "glassEdge", "and the rim is the glass's own again after")
 
-	-- DISPELLABLE DEBUFFS: the client's icons on Forever, ours on Era.
+	-- THE AURAS (Joe, 2026-10-24): every debuff, yours to dispel first, then
+	-- the buffs you cast; three at most. The client's icons on Forever, ours on
+	-- Era. Until then a cell drew only what you can dispel, and stood empty.
 	if _G.__flavour == "camelot" then
+		local G = A1.auras and A1.auras.__groups or {}
 		check(A1.auras and A1.auras.__unit == "raid1"
-			and A1.auras.__groups.dispel and A1.auras.__groups.dispel.filter == "HARMFUL|RAID",
-			"Forever: each cell's container shows what you can dispel, bound to its member")
+			and G.dispel and G.dispel.filter == "HARMFUL|RAID"
+			and G.debuffs and G.debuffs.filter == "HARMFUL|!RAID"
+			and G.mine and G.mine.filter == "HELPFUL|PLAYER",
+			"Forever: each cell's container holds your dispels, the other debuffs and your own buffs")
+		check(A1.auraHost and A1.auraHost.__clips
+			and math.abs(A1.auraHost:GetWidth() - (3 * 13 - 1)) < 0.01,
+			"in that order, three in all: a clipping host three icons wide")
 	else
-		_G.__auras.raid1 = { HARMFUL = {
-			{ "Curse of Weakness", 136138, 0, "Curse", 10, nil, "boss1", false, nil, true },
-			{ "Rend", 132155, 0, nil, 10, nil, "boss1", false, nil, false },
-		} }
+		_G.__auras.raid1 = {
+			HARMFUL = {
+				{ "Rend", 132155, 0, nil, 10, nil, "boss1", false, nil, false },
+				{ "Curse of Weakness", 136138, 0, "Curse", 10, nil, "boss1", false, nil, true },
+			},
+			HELPFUL = {
+				{ "Renew", 135953, 0, "Magic", 15, nil, "player", true },
+				{ "Fortitude", 135987, 0, "Magic", 1800, nil, "raid2", false },
+			},
+		}
 		fire("UNIT_AURA", "raid1")
-		check(A1.icons[1]:IsShown() and A1.icons[1]:GetTexture() == 136138
-			and not A1.icons[2]:IsShown(),
-			"Era: a debuff you can dispel shows as an icon, one you cannot does not")
+		check(A1.icons[1]:GetTexture() == 136138 and A1.icons[2]:GetTexture() == 132155
+			and A1.icons[3]:IsShown() and A1.icons[3]:GetTexture() == 135953,
+			"Era: the debuff you can dispel first, then the other, then your own buff ("
+			.. tostring(A1.icons[1]:GetTexture()) .. ", " .. tostring(A1.icons[2]:GetTexture())
+			.. ", " .. tostring(A1.icons[3]:GetTexture()) .. ")")
+		-- Someone else's buff is not shown, whatever room is left.
+		_G.__auras.raid1.HARMFUL = {}
+		fire("UNIT_AURA", "raid1")
+		check(A1.icons[1]:GetTexture() == 135953 and not A1.icons[2]:IsShown(),
+			"and another player's buff is not shown, room or none")
 		_G.__auras.raid1 = nil
+		fire("UNIT_AURA", "raid1")
 	end
 
 	-- IN COMBAT NOTHING MOVES: a roster change waits for the fight to end.
