@@ -12617,6 +12617,20 @@ section("group tools: the Toolbox runs the group, Blizzard's tab otherwise", fun
 		"our party frames off, the Toolbox's controls stay, and Blizzard's tab stays away")
 	A:SetModuleEnabled("partyframes", true)
 
+	-- SETTINGS SECOND TO LAST, whatever the group (Joe, 2026-10-24): the
+	-- group node goes above it, not between it and What's new.
+	local function lastNodes()
+		t:Refresh()
+		local shown = {}
+		for _, n in ipairs(t.nodes) do
+			if n.button and n.button:IsShown() then shown[#shown + 1] = n.key end
+		end
+		return table.concat(shown, ",")
+	end
+	local inParty = lastNodes()
+	check(inParty:find("party,settings,news$") ~= nil,
+		"in a group, the group node sits above Settings, and Settings above What's new (" .. inParty .. ")")
+
 	-- RAID FRAMES OFF, IN A RAID, ON ERA: Blizzard's raid frames show - the
 	-- report that started this (Joe, 2026-10-24).
 	local RFm = A:GetModule("raidframes")
@@ -22492,7 +22506,8 @@ do
 	A.Movers:Lock()
 	-- The group's node too: the mock is in a party, and the controls are the
 	-- Toolbox's whether the party frames are on or not (they are off here).
-	K.ys, K.order = {}, { "menu", "widgets", "addons", "settings", "party", "news" }
+	-- Above Settings, which stays second to last (Joe, 2026-10-24).
+	K.ys, K.order = {}, { "menu", "widgets", "addons", "party", "settings", "news" }
 	for i, key in ipairs(K.order) do
 		local n = K.t:Node(key)
 		local x, y = K.at(n.button)
@@ -22506,7 +22521,8 @@ do
 
 	-- Pins: three launchers pinned hang straight under Addons (Joe, over the
 	-- board's below What's new), 32 apart, each the addon's own button on a
-	-- bare node of the trunk; Settings 48 under the last.
+	-- bare node of the trunk; the next node (the group's, here) 48 under the
+	-- last, and Settings after it.
 	for i = 1, 3 do
 		_G.__makeLDB("RailFit" .. i, "launcher")
 		_G.__makeDBIcon("RailFit" .. i)
@@ -22526,9 +22542,11 @@ do
 			.. tostring(x) .. ", " .. tostring(y) .. ")")
 	end
 	do
+		local _, py = K.at(K.t:Node("party").button)
 		local _, sy = K.at(K.t:Node("settings").button)
-		check(K.near(sy, K.ys[3] + 36 + 64 + 48),
-			"and Settings comes 48 under the last pin (" .. tostring(sy) .. ")")
+		check(K.near(py, K.ys[3] + 36 + 64 + 48) and K.near(sy, py + 72),
+			"and the group node comes 48 under the last pin, Settings 72 under it ("
+			.. tostring(py) .. ", " .. tostring(sy) .. ")")
 	end
 	check(not TBm.pinNodes[1].button.fill:IsShown(), "on a bare node: no diamond of its own")
 	_G.__makeLDB("RailFit4", "launcher"); _G.__makeDBIcon("RailFit4")
@@ -35687,12 +35705,13 @@ section("party controls: the marks go on your target", function()
 	check(not clash, "and its own cell out of the sheet (" .. tostring(clash) .. ")")
 
 	-- THE TOOLBOX TRUNK'S PARTY BRANCH (decision 1 of the prune audit): a
-	-- node between Settings and What's new, opening the controls beside it.
+	-- node above Settings, which stays second to last (Joe, 2026-10-24; it
+	-- was between Settings and What's new), opening the controls beside it.
 	do
 		local t = A.Trunk:Get("toolbox")
 		local node = t:Node("party")
-		check(node and node.order > t:Node("settings").order and node.order < t:Node("news").order,
-			"a Party node on the Toolbox trunk, between Settings and What's new")
+		check(node and node.order > t:Node("addons").order and node.order < t:Node("settings").order,
+			"a Party node on the Toolbox trunk, between Addons and Settings")
 		check(node.button:IsShown(), "shown while you are in a group")
 		check(PF.handle == nil, "and the edge handle is gone")
 		node.button:GetScript("OnClick")(node.button, "LeftButton")

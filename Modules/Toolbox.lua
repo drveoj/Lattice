@@ -1432,7 +1432,8 @@ function TB:LayoutPins()
 	local t = Trunk()
 	-- RIGHT UNDER ADDONS, where they came from, not under What's new as the
 	-- board has them (Joe, 2026-10-10). The last takes the room a branch node
-	-- leaves above itself, so Settings is not crowded onto the pins.
+	-- leaves above itself, so the next one down (the group's in a group,
+	-- Settings out of one) is not crowded onto the pins.
 	for i = #self.pinNodes + 1, #list do
 		self.pinNodes[i] = t:AddNode("pin" .. i, {
 			kind = "item", bare = true, size = PIN, step = PIN_STEP, order = 300 + i / 100,

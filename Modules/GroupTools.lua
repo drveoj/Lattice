@@ -118,7 +118,10 @@ end
 
 function GT:AttachNode()
 	Trunk():AddNode("party", {
-		icon = "party", label = GroupName, order = 450,
+		-- After Addons and its pins (300.x), before Settings (400): Settings
+		-- stays second to last, above What's new, in a group or out (Joe,
+		-- 2026-10-24).
+		icon = "party", label = GroupName, order = 350,
 		transient = true,
 		available = function() return Ours() and InGroup() end,
 		isOpen = function() return GT:PanelOpen() end,
