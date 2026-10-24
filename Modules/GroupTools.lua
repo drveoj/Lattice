@@ -28,7 +28,7 @@ local ADDON, A = ...
 local L = A.L
 local GT = A:NewModule("grouptools")
 
-local W = A.Widgets
+local W, Media = A.Widgets, A.Media
 
 local PANEL_W   = 320
 local WELL      = 34
@@ -36,6 +36,7 @@ local WELL_GAP  = 6
 local ROW_H     = 30
 local MARKERS   = 8
 local PANEL_PAD, HEAD_H = 16, 26
+local ROLE_H, ROLE_STEP = 18, 70
 
 --- How long a countdown runs, and the choices offered.
 --
@@ -135,29 +136,83 @@ end
 
 --- Who may press what.
 --
---  READY CHECK, ROLE CHECK and CONVERT are the leader's. The client gates the
---  first itself; the other two it simply ignores, which is worse - a button
---  that does nothing and does not say so. So they are HIDDEN for a member
---  rather than dimmed, and the panel is shorter. A greyed row is a row you
---  keep trying.
+--  READY CHECK and ROLE CHECK are the officers' (IsOfficer), CONVERT the
+--  party leader's. The client refuses a party member's ready check and
+--  ignores their role check, which is worse - a button that does nothing and
+--  does not say so. So they are HIDDEN for a member rather than dimmed, and
+--  the panel is shorter. A greyed row is a row you keep trying.
 --
---  COUNTDOWN IS NOT ON THE LIST, and that is the client's decision rather than
---  ours: its own slash command gates ready-check on being leader and does not
---  gate countdown at all.
+--  COUNTDOWN is anyone's in a party - the client's own slash command does not
+--  gate it - and an officer's in a raid, as the raid tab has it.
 local function IsLeader()
-	return UnitIsGroupLeader and UnitIsGroupLeader("player") or false
+	local l = UnitIsGroupLeader and UnitIsGroupLeader("player")
+	if A.IsSecret(l) then return false end
+	return l and true or false
 end
+
+--- WHO RUNS A RAID: its leader and assistants. The raid tab gives both the
+--  marks, ready check, countdown and role check, and gives a plain member
+--  none of them (Blizzard_CompactRaidFrameManager.lua:174-188). Ours gave an
+--  assistant only the marks and countdown (Joe's screenshot, 2026-10-24). A
+--  party has no assistants, so there it is the leader.
+local function IsOfficer()
+	if IsLeader() then return true end
+	if not InRaid() then return false end
+	local a = UnitIsGroupAssistant and UnitIsGroupAssistant("player")
+	if A.IsSecret(a) then return false end
+	return a and true or false
+end
+
+local ROLES = { "TANK", "HEALER", "DAMAGER" }
+local ROLE_ICON = { TANK = "tank", HEALER = "healer", DAMAGER = "dps" }
+
+--- Alive and total, for the group and for each role, counted as the raid tab
+--  counts them (CRF_CountStuff, Blizzard_CompactRaidFrameManager.lua:627-652):
+--  in a raid, dead is GetRaidRosterInfo's ninth answer and the role its
+--  twelfth; in a party, each unit asked.
+local function Count()
+	local n = { alive = 0, total = 0 }
+	for _, r in ipairs(ROLES) do n[r] = { alive = 0, total = 0 } end
+	local function add(dead, role)
+		if A.IsSecret(dead) then dead = false end
+		if A.IsSecret(role) then role = nil end
+		n.total = n.total + 1
+		if not dead then n.alive = n.alive + 1 end
+		local slot = role and n[role]
+		if slot then
+			slot.total = slot.total + 1
+			if not dead then slot.alive = slot.alive + 1 end
+		end
+	end
+	local function roleOf(unit)
+		return UnitGroupRolesAssigned and UnitGroupRolesAssigned(unit) or nil
+	end
+	if InRaid() then
+		for i = 1, GetNumGroupMembers() do
+			local _, rank, _, _, _, _, _, _, dead, _, _, role = GetRaidRosterInfo(i)
+			if not A.IsSecret(rank) and rank then add(dead, role) end
+		end
+	elseif InGroup() then
+		add(UnitIsDeadOrGhost("player"), roleOf("player"))
+		for i = 1, (GetNumSubgroupMembers and GetNumSubgroupMembers() or 0) do
+			add(UnitIsDeadOrGhost("party" .. i), roleOf("party" .. i))
+		end
+	end
+	return n
+end
+GT.Count = Count
 
 local ACTIONS = {
 	{
 		key = "ready", label = READY_CHECK or "Ready Check",
-		glyph = "tick", token = "friendly", leader = true,
+		glyph = "tick", token = "friendly", officer = true,
 		run = function()
 			if C_PartyInfo and C_PartyInfo.DoReadyCheck then C_PartyInfo.DoReadyCheck() end
 		end,
 	},
 	{
 		key = "countdown", label = L.party.controls.countdown, glyph = "zen", token = "text",
+		raidOfficer = true,
 		run = function(self)
 			local n = math.min(self.seconds or 10, MaxCountdown())
 			if C_PartyInfo and C_PartyInfo.DoCountdown then C_PartyInfo.DoCountdown(n) end
@@ -165,7 +220,7 @@ local ACTIONS = {
 	},
 	{
 		key = "roles", label = L.party.is_leader.key, glyph = "dps", token = "text",
-		leader = true,
+		officer = true,
 		run = function()
 			if InitiateRolePoll then InitiateRolePoll() end
 		end,
@@ -296,9 +351,29 @@ function GT:BuildPanel()
 	p.head:SetPoint("TOPRIGHT", p, "TOPRIGHT", -PANEL_PAD, -PANEL_PAD)
 	p.count = p.head.hint
 
+	-- THE ROLES, in a raid: alive of each, as the raid tab heads its panel.
+	p.roleLine = CreateFrame("Frame", nil, p)
+	p.roleLine:SetHeight(ROLE_H)
+	p.roleCounts = {}
+	local x = 0
+	for _, role in ipairs(ROLES) do
+		local icon = p.roleLine:CreateTexture(nil, "OVERLAY")
+		icon:SetSize(ROLE_H - 4, ROLE_H - 4)
+		icon:SetPoint("LEFT", p.roleLine, "LEFT", x, 0)
+		Media:SetIcon(icon, ROLE_ICON[role])
+		local text = W.Text(p.roleLine, "tiny", "LEFT")
+		text:SetPoint("LEFT", icon, "RIGHT", 4, 0)
+		p.roleCounts[role] = { icon = icon, text = text }
+		x = x + ROLE_STEP
+	end
+
+	-- The marks: a block that comes and goes whole, so it is laid out from
+	-- its own top, which RefreshPanel places.
+	p.markBox = CreateFrame("Frame", nil, p)
+	p.markBox:SetSize(PANEL_W - PANEL_PAD * 2, HEAD_H + 2 * (WELL + WELL_GAP))
 	p.marks = A.Trunk.Head(p)
-	p.marks:SetPoint("TOPLEFT", p, "TOPLEFT", PANEL_PAD, -(PANEL_PAD + HEAD_H))
-	p.marks:SetPoint("TOPRIGHT", p, "TOPRIGHT", -PANEL_PAD, -(PANEL_PAD + HEAD_H))
+	p.marks:SetPoint("TOPLEFT", p.markBox, "TOPLEFT", 0, 0)
+	p.marks:SetPoint("TOPRIGHT", p.markBox, "TOPRIGHT", 0, 0)
 	p.marks:Set(_G.RAID_TARGET_ICON or "Target markers", "")
 
 	-- FIVE ACROSS, TWO DOWN: eight marks and a Clear spanning the last two
@@ -308,22 +383,20 @@ function GT:BuildPanel()
 	-- Blizzard's own grid has read that way since the marks existed, and
 	-- everybody reaches for the skull in the top-left without looking.
 	p.wells = {}
-	local x0, y0 = PANEL_PAD, -(PANEL_PAD + HEAD_H * 2)
 	for slot = 1, MARKERS do
 		local index = MARKERS + 1 - slot
 		local b = BuildWell(p, index)
 		local col, row = (slot - 1) % 5, math.floor((slot - 1) / 5)
-		b:SetPoint("TOPLEFT", p, "TOPLEFT",
-			x0 + col * (WELL + WELL_GAP), y0 - row * (WELL + WELL_GAP))
+		b:SetPoint("TOPLEFT", p.markBox, "TOPLEFT",
+			col * (WELL + WELL_GAP), -HEAD_H - row * (WELL + WELL_GAP))
 		p.wells[slot] = b
 	end
 
 	local clear = BuildWell(p, nil)
 	clear:SetWidth(WELL * 2 + WELL_GAP)
-	clear:SetPoint("TOPLEFT", p, "TOPLEFT",
-		x0 + 3 * (WELL + WELL_GAP), y0 - (WELL + WELL_GAP))
+	clear:SetPoint("TOPLEFT", p.markBox, "TOPLEFT",
+		3 * (WELL + WELL_GAP), -HEAD_H - (WELL + WELL_GAP))
 	p.clear = clear
-	p.rowsTop = -y0 + 2 * (WELL + WELL_GAP) + 8
 
 	p.rows = {}
 	for i, spec in ipairs(ACTIONS) do
@@ -358,18 +431,41 @@ function GT:RefreshPanel()
 	if not p then return end
 	local c = A.Palette.c
 
-	-- Online of the whole group: it read n/n, the same number twice, whoever
-	-- had gone offline.
-	local n = GetNumGroupMembers and GetNumGroupMembers() or 0
-	local online = 0
+	-- ALIVE OF THE WHOLE GROUP, as the raid tab heads its panel (Joe,
+	-- 2026-10-24). It read online/total until then.
 	local raid = InRaid()
-	if n > 0 then
-		for i = 1, n do
-			local unit = raid and ("raid" .. i) or (i == 1 and "player" or ("party" .. (i - 1)))
-			if not UnitIsConnected or UnitIsConnected(unit) then online = online + 1 end
+	local officer = IsOfficer()
+	local n = Count()
+	p.head:Set(GroupName(), n.total > 0 and (n.alive .. "/" .. n.total) or "")
+	local y = PANEL_PAD + HEAD_H
+
+	-- The roles, a raid's.
+	p.roleLine:SetShown(raid)
+	if raid then
+		p.roleLine:ClearAllPoints()
+		p.roleLine:SetPoint("TOPLEFT", p, "TOPLEFT", PANEL_PAD, -y)
+		p.roleLine:SetPoint("TOPRIGHT", p, "TOPRIGHT", -PANEL_PAD, -y)
+		for _, role in ipairs(ROLES) do
+			local r = p.roleCounts[role]
+			local s = n[role].alive .. "/" .. n[role].total
+			if r.text:GetText() ~= s then r.text:SetText(s) end
+			W.Color(r.text, c.text)
+			W.Tint(r.icon, c.textDim, 1)
 		end
+		y = y + ROLE_H + 8
 	end
-	p.head:Set(GroupName(), n > 0 and (online .. "/" .. n) or "")
+
+	-- The marks: anyone's in a party, an officer's in a raid.
+	local marks = officer or not raid
+	p.markBox:SetShown(marks)
+	p.marks:SetShown(marks)
+	p.clear:SetShown(marks)
+	for _, b in ipairs(p.wells) do b:SetShown(marks) end
+	if marks then
+		p.markBox:ClearAllPoints()
+		p.markBox:SetPoint("TOPLEFT", p, "TOPLEFT", PANEL_PAD, -y)
+		y = y + HEAD_H + 2 * (WELL + WELL_GAP) + 8
+	end
 
 	-- THE WELLS FOLLOW YOUR TARGET, not the party. Inert with nothing
 	-- targeted, because SetRaidTarget has no unit to act on - and a well that
@@ -397,16 +493,17 @@ function GT:RefreshPanel()
 	-- HIDDEN, NOT DIMMED, and then the panel shortens. A greyed row is a row
 	-- you keep trying; a row that is not there is a question you do not ask.
 	local leader = IsLeader()
-	local y = -p.rowsTop
-	local used = 0
+	local any = false
 	for _, b in ipairs(p.rows) do
-		if (b.spec.leader and not leader) or (b.spec.party and raid) then
+		local s = b.spec
+		if (s.leader and not leader) or (s.officer and not officer)
+			or (s.raidOfficer and raid and not officer) or (s.party and raid) then
 			b:Hide()
 		else
 			b:Show()
-			b:SetPoint("TOP", p, "TOP", 0, y)
-			y = y - (ROW_H + 6)
-			used = used + ROW_H + 6
+			b:SetPoint("TOP", p, "TOP", 0, -y)
+			y = y + ROW_H + 6
+			any = true
 			if b.pick then
 				b.pick.text:SetText((b.seconds or 10) .. "s")
 				-- Full ink: a value you can change rests bright, not dim.
@@ -423,11 +520,12 @@ function GT:RefreshPanel()
 		if A.IsSecret(everyone) then everyone = false end
 		if p.assist:IsOn() ~= (everyone and true or false) then p.assist:SetOn(everyone) end
 		p.assist:ClearAllPoints()
-		p.assist:SetPoint("TOPLEFT", p, "TOPLEFT", PANEL_PAD + 4, y - 4)
-		used = used + ROW_H + 6
+		p.assist:SetPoint("TOPLEFT", p, "TOPLEFT", PANEL_PAD + 4, -(y + 4))
+		y = y + ROW_H + 6
+		any = true
 	end
 
-	p:SetHeight(p.rowsTop + used - 6 + PANEL_PAD)
+	p:SetHeight(y - (any and 6 or 0) + PANEL_PAD)
 	-- Its height changed, so it is placed again beside its node.
 	if p:IsShown() then Trunk():Place("party", p) end
 end
@@ -472,6 +570,12 @@ function GT:RegisterEvents()
 	-- that unit. These two are how the client says so.
 	A:RegisterEvent(self, "PARTY_MEMBER_ENABLE",  sweep)
 	A:RegisterEvent(self, "PARTY_MEMBER_DISABLE", sweep)
+	-- Somebody dying or coming back changes the counts: the raid tab's own
+	-- two events (Blizzard_CompactRaidFrameManager.lua:56-57). Frequent in a
+	-- raid, so only while the branch is open.
+	local function counts() if GT:PanelOpen() then GT:RefreshPanel() end end
+	A:RegisterEvent(self, "UNIT_FLAGS",           counts)
+	A:RegisterEvent(self, "PLAYER_FLAGS_CHANGED", counts)
 end
 
 function GT:OnEnable()

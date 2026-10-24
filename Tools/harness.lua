@@ -6415,6 +6415,9 @@ do
 	local ldbi = LibStub:NewLibrary("LibDBIcon-1.0", 56)
 	ldbi.objects = {}
 	ldbi.callbacks = LibStub("CallbackHandler-1.0"):New(ldbi)
+	-- The one tooltip every button's OnEnter fills, made when the library loads
+	-- (LibDBIcon-1.0.lua:21 in Questie's and Plater's copies).
+	ldbi.tooltip = CreateFrame("GameTooltip", "LibDBIconTooltip", UIParent, "GameTooltipTemplate")
 	function ldbi:GetButtonList()
 		local out = {}
 		for name in pairs(self.objects) do out[#out + 1] = name end
@@ -7373,9 +7376,13 @@ function GetRaidRosterInfo(i)
 	local r = _G.__raidRoster[i]
 	if not r then return nil end
 	local d = units[r.unit] or {}
+	-- On to the assigned role, the twelfth: the raid tab counts by it.
 	return d.name, 0, r.subgroup, d.level, d.class, d.classToken, nil,
-		d.exists ~= false, d.dead
+		d.exists ~= false, d.dead, nil, nil, d.role or "NONE"
 end
+-- A raid's officers, as _G.__assistants[unit] = true.
+_G.__assistants = {}
+function UnitIsGroupAssistant(u) return _G.__assistants[u] == true end
 
 -- THE CLIENT'S GROUP HEADER (SecureGroupHeaders.lua), held to its source:
 --   - it works only while VISIBLE: an attribute set or a roster change on a
@@ -12595,6 +12602,38 @@ section("group tools: the Toolbox runs the group, Blizzard's tab otherwise", fun
 	UnitIsGroupLeader = function() return false end
 	GT:RefreshPanel()
 	check(not GT.panel.assist:IsShown(), "a member is not offered it")
+
+	-- WHO RUNS A RAID: leader and assistants, as the raid tab has it
+	-- (Classic manager :174-188; Joe's assistant screenshot, 2026-10-24).
+	local function offered(key)
+		for _, b in ipairs(GT.panel.rows) do
+			if b.spec.key == key then return b:IsShown() end
+		end
+	end
+	check(not offered("ready") and not offered("countdown") and not offered("roles")
+		and not GT.panel.markBox:IsShown() and not GT.panel.wells[1]:IsShown(),
+		"a plain raid member gets no marks, ready check, countdown or role check")
+	_G.__assistants.player = true
+	GT:RefreshPanel()
+	check(offered("ready") and offered("countdown") and offered("roles")
+		and GT.panel.markBox:IsShown() and GT.panel.wells[1]:IsShown()
+		and not GT.panel.assist:IsShown(),
+		"an assistant gets the marks, ready check, countdown and role check, not the leader's toggle")
+	_G.__assistants.player = nil
+
+	-- THE COUNTS: alive of all, and of each role (CRF_CountStuff, :627-652).
+	local keep = { raid1 = _G.__units.raid1, raid2 = _G.__units.raid2 }
+	_G.__units.raid1 = { exists = true, name = "Tank", role = "TANK" }
+	_G.__units.raid2 = { exists = true, name = "Gone", role = "DAMAGER", dead = true }
+	GT:RefreshPanel()
+	local rc = GT.panel.roleCounts
+	check(GT.panel.head.hint:GetText() == "1/2" and GT.panel.roleLine:IsShown()
+		and rc.TANK.text:GetText() == "1/1" and rc.HEALER.text:GetText() == "0/0"
+		and rc.DAMAGER.text:GetText() == "0/1",
+		"the raid heading is alive of all, and each role alive of its own ("
+		.. tostring(GT.panel.head.hint:GetText()) .. "; " .. tostring(rc.TANK.text:GetText())
+		.. " " .. tostring(rc.HEALER.text:GetText()) .. " " .. tostring(rc.DAMAGER.text:GetText()) .. ")")
+	_G.__units.raid1, _G.__units.raid2 = keep.raid1, keep.raid2
 	UnitIsGroupLeader, IsEveryoneAssistant = plainLeader, plainAll
 	C_PartyInfo.SetEveryoneIsAssistant = plainSet
 
@@ -31787,6 +31826,31 @@ do
 	T:OnConfigChanged()
 end
 
+print("== tooltips: LibDBIcon's tooltip is drawn at the deck's scale too ==")
+do
+	-- A pinned addon's button keeps LibDBIcon's own OnEnter, so its hover shows
+	-- LibDBIconTooltip, not GameTooltip (Joe, 2026-10-24: the Leatrix Plus pin's
+	-- tooltip was far bigger than the rest). Leatrix Plus sets that one's scale
+	-- at startup too.
+	local T = A:GetModule("tooltips")
+	local tip = _G.LibDBIconTooltip
+	local was = A.db.profile.scale
+	A.db.profile.scale = 0.71
+	T:OnConfigChanged()
+
+	check(T.skinned[tip] == true, "LibDBIconTooltip is one of the tooltips we dress")
+	tip:Hide()
+	tip:SetScale(1.0)
+	tip:Show()
+	check(math.abs(tip:GetScale() - 0.71) < 0.001,
+		"and showing it puts it at profile.scale, like GameTooltip (got "
+		.. tostring(tip:GetScale()) .. ")")
+	tip:Hide()
+
+	A.db.profile.scale = was
+	T:OnConfigChanged()
+end
+
 print("== tooltips: the card follows lines added AFTER the tooltip is up ==")
 do
 	-- Pawn hooksecurefuncs about thirty GameTooltip:Set*Item methods and adds its
@@ -35706,16 +35770,17 @@ section("party: the count is who is online, and the refresh survives off/on", fu
 	local PF = A:GetModule("partyframes")
 	local GT = A:GetModule("grouptools")
 	if not GT.panel then GT:OpenPanel() GT.panel:Hide() end
-	-- The heading read n/n, the same number twice.
+	-- The heading read n/n, the same number twice. It counts who is ALIVE of
+	-- the group now, as the raid tab does (Joe, 2026-10-24).
 	local saved = {}
 	for i = 1, 4 do
 		local u = "party" .. i
 		saved[u] = _G.__units[u]
-		_G.__units[u] = { exists = i <= 3, offline = (i == 2), hp = 1, hpMax = 1 }
+		_G.__units[u] = { exists = i <= 3, dead = (i == 2), hp = 1, hpMax = 1 }
 	end
 	GT:RefreshPanel()
 	check(GT.panel.head.hint:GetText() == "3/4",
-		"the party heading counts who is online of the group ("
+		"the party heading counts who is alive of the group ("
 		.. tostring(GT.panel.head.hint:GetText()) .. ")")
 	for u, d in pairs(saved) do _G.__units[u] = d end
 	GT:RefreshPanel()

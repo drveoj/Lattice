@@ -162,6 +162,10 @@ local KNOWN = {
 	-- Leaving them out meant AetherUI's own config window was the one place in
 	-- the UI still showing a stone border.
 	"AceGUITooltip", "AceConfigDialogTooltip",
+	-- LibDBIcon's shared tooltip (LibDBIcon-1.0.lua:21). A pinned addon's button
+	-- keeps the library's OnEnter, so hovering it shows this, not GameTooltip
+	-- - at its own scale until it was listed here (Joe, 2026-10-24).
+	"LibDBIconTooltip",
 }
 
 --- LibExtraTip - which is how Informant, Enchantrix, BeanCounter and the rest of
