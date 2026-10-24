@@ -8035,7 +8035,19 @@ end
 
 local pump = A.pump
 
+-- Whether this fight's PLAYER_REGEN_DISABLED, and the end's
+-- PLAYER_REGEN_ENABLED, have been sent (see below).
+local regenSent, regenBack = false, false
+
 fire = function(event, ...)
+	-- One of each per fight, as the client sends them.
+	if event == "PLAYER_REGEN_DISABLED" then
+		if regenSent then return end
+		regenSent, regenBack = true, false
+	elseif event == "PLAYER_REGEN_ENABLED" then
+		if regenBack then return end
+		regenBack, regenSent = true, false
+	end
 	local fn = pump:GetScript("OnEvent")
 	if fn then
 		-- The fight's first event: protected frames still move while it is
@@ -8044,6 +8056,39 @@ fire = function(event, ...)
 		local ok, err = pcall(fn, pump, event, ...)
 		_G.__regenWindow = nil
 		if not ok then fail("event " .. event .. ": " .. tostring(err)) end
+	end
+end
+
+-- A FIGHT ALWAYS OPENS WITH PLAYER_REGEN_DISABLED AND CLOSES WITH
+-- PLAYER_REGEN_ENABLED, and code relies on the first one's window - the
+-- Toolbox's world markers step out of their branch there (memory:
+-- combat-start-window). Most checks start and end a fight by setting
+-- __inCombat, so setting it sends the event, as the client would, and a check
+-- that also fires one by hand does not get it twice.
+do
+	local inCombat = rawget(_G, "__inCombat")
+	rawset(_G, "__inCombat", nil)
+	setmetatable(_G, {
+		__index = function(_, k)
+			if k == "__inCombat" then return inCombat end
+		end,
+		__newindex = function(t, k, v)
+			if k ~= "__inCombat" then return rawset(t, k, v) end
+			local was = inCombat
+			inCombat = v
+			if v and not was then
+				fire("PLAYER_REGEN_DISABLED")
+			elseif was and not v then
+				fire("PLAYER_REGEN_ENABLED")
+			end
+		end,
+	})
+	-- Lockdown with no event at all: for a check about what is still up when
+	-- the window has gone by, which the client never shows by itself.
+	function _G.__setCombatQuietly(v)
+		inCombat = v
+		-- A fight, so its end is still to come.
+		if v then regenBack = false end
 	end
 end
 
@@ -12678,14 +12723,44 @@ section("group tools: the Toolbox runs the group, Blizzard's tab otherwise", fun
 		end
 	end
 	check(not offered("ready") and not offered("countdown") and not offered("roles")
-		and not GT.panel.markBox:IsShown() and not GT.panel.wells[1]:IsShown(),
-		"a plain raid member gets no marks, ready check, countdown or role check")
+		and not GT.panel.markBox:IsShown() and not GT.panel.wells[1]:IsShown()
+		and not GT.panel.worldBox:IsShown(),
+		"a plain raid member gets no marks, world markers, ready check, countdown or role check")
 	_G.__assistants.player = true
 	GT:RefreshPanel()
 	check(offered("ready") and offered("countdown") and offered("roles")
 		and GT.panel.markBox:IsShown() and GT.panel.wells[1]:IsShown()
-		and not GT.panel.assist:IsShown(),
-		"an assistant gets the marks, ready check, countdown and role check, not the leader's toggle")
+		and GT.panel.worldBox:IsShown() and not GT.panel.assist:IsShown(),
+		"an assistant gets the marks, world markers, ready check, countdown and role check,"
+		.. " not the leader's toggle")
+
+	-- THE WORLD MARKERS (the raid tab's dropdown, Classic manager :73-113):
+	-- secure buttons, in the marks' order, the flare that wears each symbol.
+	do
+		local P = GT.panel
+		local w1, w8, wc = P.worldWells[1], P.worldWells[8], P.worldClear
+		check(w1:IsProtected() and w1:GetAttribute("type") == "worldmarker"
+			and w1:GetAttribute("marker") == "8" and w1:GetAttribute("action1") == "set"
+			and w1:GetAttribute("action2") == "clear",
+			"the first well is a secure button placing the white flare, the skull's,"
+			.. " and clearing it on a right-click (" .. tostring(w1:GetAttribute("marker")) .. ")")
+		check(w8:GetAttribute("marker") == "5",
+			"the last is the yellow flare, the star's (" .. tostring(w8:GetAttribute("marker")) .. ")")
+		check(wc:GetAttribute("type") == "worldmarker" and wc:GetAttribute("marker") == nil
+			and wc:GetAttribute("action1") == "clear",
+			"and Clear clears them all, with no flare named")
+		local _, _, _, wx, wy = w1:GetPoint(1)
+		local _, _, _, mx, my = P.wells[1]:GetPoint(1)
+		check(w1:GetParent() == P.worldBox and wx == mx and wy == my,
+			"laid out as the mark grid, in a block of their own")
+		-- Where the client has none, there is no block (:74-80).
+		local had = _G.IsRaidMarkerSystemEnabled
+		_G.IsRaidMarkerSystemEnabled = function() return false end
+		GT:RefreshPanel()
+		check(not P.worldBox:IsShown(), "no world markers where the client has none")
+		_G.IsRaidMarkerSystemEnabled = had
+		GT:RefreshPanel()
+	end
 	_G.__assistants.player = nil
 
 	-- THE COUNTS: alive of all, and of each role (CRF_CountStuff, :627-652).
@@ -13030,8 +13105,11 @@ section("party: a slot that empties does not move the others", function()
 	GT:SetPanelOpen(true)
 	_G.__inCombat = false
 	fire("PLAYER_TARGET_CHANGED")
-	local x0, y0 = select(4, GT.panel:GetPoint())
 	_G.__inCombat = true
+	-- Read once the fight has begun: its first event takes the world markers
+	-- out and the branch shortens, which is meant (Joe: "markers out of
+	-- combat only"). The target change after must move nothing.
+	local x0, y0 = select(4, GT.panel:GetPoint())
 	blocked = _G.__blocked
 	_G.__units.target = _G.__units.target or {}
 	fire("PLAYER_TARGET_CHANGED")
@@ -21844,11 +21922,12 @@ do
 		fire("PLAYER_REGEN_ENABLED")
 
 		T.tr.button:GetScript("OnClick")(T.tr.button)
-		_G.__inCombat = true
+		-- Locked with the first event gone by: the window would have shut it.
+		_G.__setCombatQuietly(true)
 		T.p:Hide()
 		check(Track:IsOpen() == false and T.b1:IsShown(),
 			"shut in lockdown (Escape), a secure button cannot go yet")
-		_G.__inCombat = false
+		_G.__setCombatQuietly(false)
 		fire("PLAYER_REGEN_ENABLED")
 		check(not T.b1:IsShown(), "so it goes when the fight ends")
 
@@ -35744,7 +35823,28 @@ section("party controls: the marks go on your target", function()
 		local l = A.Movers.PointAt(p, "LEFT")
 		local sr = A.Movers.PointAt(node.button.stub, "RIGHT")
 		check(l and sr and math.abs(l - sr - gap) < 0.5, "beside its stub (" .. tostring(l) .. ")")
-		check(not p:IsProtected(), "and nothing protected hangs from it, so it opens and shuts in a fight")
+		-- IN A FIGHT nothing protected hangs from it, so it opens and shuts in
+		-- one: the world markers are secure, and step out as the fight starts
+		-- (Joe, 2026-10-24: "markers out of combat only").
+		check(p.worldWells and p:IsProtected(),
+			"out of a fight it carries the secure world markers")
+		_G.__inCombat = true
+		check(not p:IsProtected() and p.worldWells[1]:GetParent() ~= p.worldBox
+			and p.worldWells[1]:GetNumPoints() == 0,
+			"and in one nothing protected hangs from it, so it opens and shuts in a fight")
+		-- The fight's first event shut it, as it shuts every open transient
+		-- branch (Trunk SetQuiet); it opens again in the fight.
+		local blockedBefore = _G.__blocked
+		GT:TogglePanel()
+		check(p:IsShown() and not p.worldBox:IsShown() and _G.__blocked == blockedBefore,
+			"opened mid-fight, with no world markers in it and nothing refused ("
+			.. tostring(p:IsShown()) .. ", " .. tostring(p.worldBox:IsShown()) .. ")")
+		GT:TogglePanel()
+		check(not p:IsShown() and _G.__blocked == blockedBefore, "and shut again in it")
+		GT:TogglePanel()
+		_G.__inCombat = false
+		check(p.worldWells[1]:GetParent() == p.worldBox and p.worldBox:IsShown(),
+			"and they are back when it ends")
 		A:GetModule("toolbox"):SetOpen(true, nil, "menu")
 		check(not p:IsShown(), "opening another Toolbox branch shuts it: one at a time")
 		GT:TogglePanel()

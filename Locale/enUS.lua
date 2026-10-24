@@ -1695,6 +1695,11 @@ L["options.x_p.xp_hairline"] = "XP hairline"
 
 L["party.is_leader.key"] = "Role Check"
 L["party.controls.countdown"] = "Countdown"
+L["party.controls.world_markers"] = "World markers"
+L["party.controls.world_marker_tip"] =
+	"Click, then click the ground to place this flare. Right-click clears it. "
+		.. "Not offered in a fight."
+L["party.controls.world_clear_tip"] = "Clears every world marker."
 
 -- playback ----------------------------------------------------------------
 

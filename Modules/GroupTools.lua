@@ -21,6 +21,12 @@
 
 	NOT SECURE, and it does not need to be: none of these is a protected call
 	on this game version.
+
+	EXCEPT THE WORLD MARKERS, which are secure buttons (the scoping note's
+	"secure button only", and EllesmereUI's method on Forever). So that the
+	branch can still open, close and change height in a fight, they step out
+	of it as the fight starts and come back when it ends (Joe, 2026-10-24:
+	"markers out of combat only").
 ----------------------------------------------------------------------------]]
 
 local ADDON, A = ...
@@ -293,6 +299,70 @@ local function BuildWell(panel, index)
 	return b
 end
 
+--- The flare on each world-marker well, in the target marks' order: skull,
+--  cross, square, moon, triangle, diamond, circle, star. A flare is numbered
+--  by its colour (1 blue ... 8 white), not by the symbol it wears, so the
+--  wells cannot share the marks' indices. This is the client's own
+--  WORLD_RAID_MARKER_ORDER (Blizzard_CompactRaidFrameManager.lua:4-12, Era),
+--  and EllesmereUI's symbol map agrees (EllesmereUIQoL_RaidTools.lua:425).
+local WORLD_ORDER = { 8, 4, 1, 7, 2, 3, 6, 5 }
+
+--- The client says whether it has world markers at all, and the raid tab
+--  hides its button when it does not (CompactRaidFrameManager_SetupRaid-
+--  MarkerDropdown, :73-80).
+local function WorldMarkersOn()
+	if not IsRaidMarkerSystemEnabled then return true end
+	return IsRaidMarkerSystemEnabled() and true or false
+end
+
+--- One world-marker well: the mark well's glass, on a SECURE button.
+--
+--  The client's own world-marker action (SECURE_ACTIONS.worldmarker,
+--  SecureTemplates.lua:602 Era, :605 Forever): left places the flare where
+--  you aim, right clears it. The Clear well has no flare, and a clear with
+--  none clears them all - the call the raid tab's "Remove all" makes
+--  (ClearRaidMarker(nil), Blizzard_CompactRaidFrameManager.lua:108-110), so
+--  no slash command to localise.
+--
+--  On the mouse button's UP: a mouse press on a secure button acts on the
+--  release whatever ActionButtonUseKeyDown says (SecureTemplates.lua:805-808).
+local function BuildWorldWell(parent, world, symbol)
+	local b = W.CreateButton(parent, { corner = 10, fill = "cardBg", edge = "cardEdge",
+		template = "SecureActionButtonTemplate" })
+	b:SetSize(WELL, WELL)
+	b:RegisterForClicks("AnyUp")
+	b:SetAttribute("type", "worldmarker")
+	if world then b:SetAttribute("marker", tostring(world)) end
+	b:SetAttribute("action1", world and "set" or "clear")
+	b:SetAttribute("action2", "clear")
+	b.world = world
+
+	if symbol then
+		local icon = b:CreateTexture(nil, "OVERLAY")
+		icon:SetSize(WELL - 12, WELL - 12)
+		icon:SetPoint("CENTER", b, "CENTER", 0, 0)
+		W.SetMarkIcon(icon, symbol)
+		b.icon = icon
+	else
+		local label = W.Text(b, "tiny", "CENTER")
+		label:SetPoint("CENTER", b, "CENTER", 0, 0)
+		label:SetText(_G.NONE or "Clear")
+		b.label = label
+	end
+
+	-- Hooked, not set: the template's own scripts stay as they are.
+	b:HookScript("OnEnter", function(self)
+		W.SetButtonState(self, false, true)
+		W.Tooltip(self, "ANCHOR_RIGHT", L.party.controls.world_markers,
+			self.world and L.party.controls.world_marker_tip or L.party.controls.world_clear_tip)
+	end)
+	b:HookScript("OnLeave", function(self)
+		W.SetButtonState(self, false, false)
+		W.HideTooltip()
+	end)
+	return b
+end
+
 --- One action row: a COMMAND (Lattice Polish Pass), in a list.
 --
 --  Each row drew its own box - its own corner, edge and font - and Ready Check
@@ -401,6 +471,15 @@ function GT:BuildPanel()
 		3 * (WELL + WELL_GAP), -HEAD_H - (WELL + WELL_GAP))
 	p.clear = clear
 
+	-- The world markers: the same block under its own heading. Its wells are
+	-- secure, so they are made in GT:BuildWorld, out of a fight only.
+	p.worldBox = CreateFrame("Frame", nil, p)
+	p.worldBox:SetSize(PANEL_W - PANEL_PAD * 2, HEAD_H + 2 * (WELL + WELL_GAP))
+	p.world = A.Trunk.Head(p)
+	p.world:SetPoint("TOPLEFT", p.worldBox, "TOPLEFT", 0, 0)
+	p.world:SetPoint("TOPRIGHT", p.worldBox, "TOPRIGHT", 0, 0)
+	p.world:Set(L.party.controls.world_markers, "")
+
 	p.rows = {}
 	for i, spec in ipairs(ACTIONS) do
 		local b = BuildRow(p, spec)
@@ -422,6 +501,54 @@ function GT:BuildPanel()
 
 	self:RefreshPanel()
 	return p
+end
+
+--- The world-marker wells, made once and out of a fight: a secure button's
+--  attributes cannot be written in one.
+function GT:BuildWorld()
+	local p = self.panel
+	if not p or p.worldWells or self.fighting or InCombatLockdown() then return end
+	p.worldWells = {}
+	for slot = 1, MARKERS do
+		p.worldWells[slot] = BuildWorldWell(p.worldBox, WORLD_ORDER[slot], MARKERS + 1 - slot)
+	end
+	p.worldClear = BuildWorldWell(p.worldBox, nil, nil)
+	p.worldClear:SetWidth(WELL * 2 + WELL_GAP)
+	self:PlaceWorld(true)
+end
+
+--- In the panel, laid out as the mark grid; or out of it, parked.
+--
+--  OUT AS A FIGHT STARTS, so the branch carries nothing protected and can
+--  still open, close and change height in one. Parent AND anchors: a frame
+--  something secure is anchored to is as locked as its parent. Done while
+--  PLAYER_REGEN_DISABLED is handled, the last moment a secure frame moves;
+--  on Forever InCombatLockdown already says true there, so the handler's
+--  own flag decides, not that (memory: combat-start-window).
+function GT:PlaceWorld(home)
+	local p = self.panel
+	if not (p and p.worldWells) then return end
+	if not self.park then
+		self.park = CreateFrame("Frame", nil, UIParent)
+		self.park:Hide()
+	end
+	local host = home and p.worldBox or self.park
+	local all = { p.worldClear }
+	for _, b in ipairs(p.worldWells) do all[#all + 1] = b end
+	for _, b in ipairs(all) do
+		b:ClearAllPoints()
+		b:SetParent(host)
+	end
+	if home then
+		for slot, b in ipairs(p.worldWells) do
+			local col, row = (slot - 1) % 5, math.floor((slot - 1) / 5)
+			b:SetPoint("TOPLEFT", p.worldBox, "TOPLEFT",
+				col * (WELL + WELL_GAP), -HEAD_H - row * (WELL + WELL_GAP))
+		end
+		p.worldClear:SetPoint("TOPLEFT", p.worldBox, "TOPLEFT",
+			3 * (WELL + WELL_GAP), -HEAD_H - (WELL + WELL_GAP))
+	end
+	p.worldHome = home
 end
 
 --- Everything about the panel that can change while it is open.
@@ -493,6 +620,22 @@ function GT:RefreshPanel()
 	p.clear:SetAlpha(hasTarget and 1 or 0.4)
 	p.clear:EnableMouse(hasTarget and true or false)
 
+	-- THE WORLD MARKERS: whoever has the marks, where the client has world
+	-- markers, and never in a fight (they are parked then).
+	local world = marks and WorldMarkersOn() and not self.fighting and not InCombatLockdown()
+	if world then
+		self:BuildWorld()
+		if p.worldWells and not p.worldHome then self:PlaceWorld(true) end
+	end
+	world = world and p.worldWells ~= nil and p.worldHome
+	p.worldBox:SetShown(world and true or false)
+	p.world:SetShown(world and true or false)
+	if world then
+		p.worldBox:ClearAllPoints()
+		p.worldBox:SetPoint("TOPLEFT", p, "TOPLEFT", PANEL_PAD, -y)
+		y = y + HEAD_H + 2 * (WELL + WELL_GAP) + 8
+	end
+
 	-- HIDDEN, NOT DIMMED, and then the panel shortens. A greyed row is a row
 	-- you keep trying; a row that is not there is a question you do not ask.
 	local leader = IsLeader()
@@ -561,7 +704,18 @@ function GT:RegisterEvents()
 		sweep()
 	end
 	A:RegisterEvent(self, "GROUP_ROSTER_UPDATE",   sweepAndSync)
-	A:RegisterEvent(self, "PLAYER_REGEN_ENABLED",  sweepAndSync)
+	-- The world markers out of the branch as a fight starts, and back after
+	-- (GT:PlaceWorld). The flag, not InCombatLockdown, is what the refresh
+	-- reads: on Forever the lockdown already reports on as this runs.
+	A:RegisterEvent(self, "PLAYER_REGEN_DISABLED", function()
+		GT.fighting = true
+		GT:PlaceWorld(false)
+		GT:RefreshPanel()
+	end)
+	A:RegisterEvent(self, "PLAYER_REGEN_ENABLED", function()
+		GT.fighting = nil
+		sweepAndSync()
+	end)
 	A:RegisterEvent(self, "PLAYER_ENTERING_WORLD", sweepAndSync)
 	A:RegisterEvent(self, "PARTY_LEADER_CHANGED",  sweep)
 	-- A role check answers on its own event, and nothing was listening.
