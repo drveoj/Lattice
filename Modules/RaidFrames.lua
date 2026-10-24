@@ -108,6 +108,33 @@ local PIN_GAP = 10
 local PIN_LABEL_H, PIN_LABEL_GAP = 12, 10
 local PIN_TO_WEAVE = 16
 
+-- Groups as columns (the Compact lens): each group's number in a row above
+-- it, the columns side by side from the bond (Raid.dc.html 13d).
+local COL_NUMBER_H, COL_NUMBER_GAP = 12, 4
+
+-- THE LENSES (README, "Lenses"): who is pinned, whether cells carry the
+-- threat edge, a locked density, rows or columns, and whether a member out of
+-- range fades. Dispel is the client's own icons on every lens (Joe,
+-- 2026-10-23), so the edge a lens picks is threat or none: Healer's and
+-- Lead's "dispel > threat" leave threat, Compact's "dispel" leaves none.
+local LENSES = {
+	healer  = { pins = { tanks = true },
+	            threat = true,  fade = true },
+	tank    = { pins = { otherTanks = true, healers = true },
+	            threat = true,  fade = false },
+	lead    = { pins = { boss = true },
+	            threat = true,  fade = true, marks = true },
+	compact = { pins = {},
+	            threat = false, fade = true, columns = true, density = 40 },
+}
+local LENS_ORDER = { "healer", "tank", "lead", "compact", "custom" }
+RF.LENSES = LENSES
+local LENS_NAME = {
+	healer = L.raid.lens_name.healer, tank = L.raid.lens_name.tank,
+	lead = L.raid.lens_name.lead, compact = L.raid.lens_name.compact,
+	custom = L.raid.lens_name.custom,
+}
+
 local ICON = 12   -- an aura, the client's own icon
 local ICONS = 3   -- in all, whatever they are
 
@@ -259,6 +286,10 @@ local function DressCell(cell)
 
 	cell.dot = over:CreateTexture(nil, "OVERLAY")
 	cell.dot:SetTexture(Media.texture.chipDisc)
+	-- The raid mark, on the class dot, under the Lead lens (README).
+	cell.mark = over:CreateTexture(nil, "OVERLAY", nil, 3)
+	cell.mark:SetPoint("CENTER", cell.dot, "CENTER", 0, 0)
+	cell.mark:Hide()
 
 	cell.name = W.Text(over, "unitName", "LEFT")
 	cell.name:SetWordWrap(false)
@@ -323,6 +354,7 @@ local function LayoutCell(cell, d)
 	cell.dot:ClearAllPoints()
 	cell.dot:SetSize(g.dot, g.dot)
 	cell.dot:SetPoint("LEFT", cell, "LEFT", g.pad, 0)
+	cell.mark:SetSize(g.dot * 2 + 2, g.dot * 2 + 2)
 
 	Media:SetFont(cell.name, "unitName", d.font)
 	cell.name._aetherSize = d.font
@@ -356,7 +388,8 @@ end
 
 function RF:UpdateEdge(cell)
 	local unit = cell.unit
-	local threat = unit and UnitThreatSituation and UnitThreatSituation(unit)
+	-- Only under a lens that edges cells with threat (not Compact).
+	local threat = unit and self:Lens().threat and UnitThreatSituation and UnitThreatSituation(unit)
 	if A.IsSecret(threat) then threat = nil end
 	local c = Palette.c
 	local colour
@@ -460,6 +493,11 @@ local function UpdateName(cell)
 		cell.dot:SetVertexColor(t[1], t[2], t[3], 1)
 	end
 
+	-- Lead's raid marks on the class dot; the dot gives way to a mark.
+	local marked = RF:Lens().marks and W.SetRaidMark(cell.mark, unit)
+	if not RF:Lens().marks then cell.mark:Hide() end
+	cell.dot:SetShown(not marked)
+
 	local letter = not cell.dense and RoleLetter(unit)
 	cell.role:SetText(letter or "")
 	-- The name truncates before the tag: room less the tag's own width,
@@ -487,7 +525,7 @@ UpdateCell = function(cell)
 	UpdateIcons(cell)
 	UpdateTarget(cell)
 	RF:UpdateEdge(cell)
-	W.RangeAlpha(cell, unit, 0.45)
+	W.RangeAlpha(cell, unit, RF:FadeTo())
 end
 RF.UpdateCell = UpdateCell
 
@@ -515,21 +553,111 @@ end
 -- the pins
 -- ---------------------------------------------------------------------------
 
-local function PinStore()
-	local char = A.db and A.db.char
-	if not char then return { names = {} } end
-	char.raidPins = char.raidPins or {}
-	char.raidPins.names = char.raidPins.names or {}
-	return char.raidPins
+-- ---------------------------------------------------------------------------
+-- the lens
+-- ---------------------------------------------------------------------------
+
+local function Secretless(v)
+	if A.IsSecret(v) then return nil end
+	return v
 end
 
---- Who is pinned, in order, each once and five at most: the Main Tanks and
---  tanks, the healers, then the names you pinned who are in the raid. Read
---  from the roster, so out of combat: GetRaidRosterInfo's tenth answer is the
---  raid role (MAINTANK - what a raid leader sets on Era, where a role is
---  opt-in), its twelfth the assigned one.
-function RF:PinNames()
+--- The Custom lens: the pin switches in Options › Raid, the rest as Healer's
+--  until the Raid page (phase 6) can edit them.
+local function CustomLens()
 	local c = cfg()
+	return { pins = { tanks = c.pinTanks, healers = c.pinHealers, boss = c.pinBossTarget },
+		threat = true, fade = true }
+end
+
+--- Auto by role (README, "Lenses"): the raid's leader or an assistant gets
+--  Lead; a tank or a Main Tank, Tank; a healer, Healer; anyone else, Compact,
+--  the damage dealer's default. On Era a role is opt-in, so an unset one
+--  falls to Compact.
+function RF:AutoLens()
+	if IsInRaid and IsInRaid() then
+		if Secretless(UnitIsGroupLeader and UnitIsGroupLeader("player"))
+			or Secretless(UnitIsGroupAssistant and UnitIsGroupAssistant("player")) then
+			return "lead"
+		end
+	end
+	local role = Secretless(UnitGroupRolesAssigned and UnitGroupRolesAssigned("player"))
+	if role == "TANK" or Secretless(GetPartyAssignment and GetPartyAssignment("MAINTANK", "player")) then
+		return "tank"
+	end
+	if role == "HEALER" then return "healer" end
+	return "compact"
+end
+
+local function LensStore()
+	local char = A.db and A.db.char
+	if not char then return {} end
+	char.raidLens = char.raidLens or {}
+	return char.raidLens
+end
+
+--- The lens in use: the one this character chose, or Auto's.
+function RF:LensKey()
+	local chosen = LensStore().chosen
+	if chosen == "custom" or LENSES[chosen] then return chosen end
+	return self:AutoLens()
+end
+
+function RF:LensFor(key)
+	if key == "custom" then return CustomLens() end
+	return LENSES[key] or LENSES.healer
+end
+
+--- The lens the weave was last laid out with. Taken at Layout, out of combat,
+--  so a role that changes mid-fight does not half-apply.
+function RF:Lens()
+	return self.lens or LENSES.healer
+end
+
+--- How far a member out of range fades: 45% (README), or not at all under a
+--  lens without range fade (Tank).
+function RF:FadeTo()
+	return self:Lens().fade and 0.45 or 1
+end
+
+--- Choose a lens (nil for Auto), kept per character (README). Like every
+--  layout change it waits for the end of a fight, and says so.
+function RF:SetLens(key)
+	LensStore().chosen = key
+	if InCombatLockdown() then A:Print(L.raid.after_combat) end
+	self:Layout()
+end
+
+--- The names pinned under a lens, kept per character per lens (README,
+--  "Pin"). Names pinned before lenses existed are given to every lens, so
+--  nobody's pins go missing.
+local function PinStore(key)
+	local char = A.db and A.db.char
+	if not char then return {} end
+	local p = char.raidPins or {}
+	char.raidPins = p
+	p.byLens = p.byLens or {}
+	if p.names then
+		for _, k in ipairs(LENS_ORDER) do
+			p.byLens[k] = p.byLens[k] or {}
+			for _, n in ipairs(p.names) do table.insert(p.byLens[k], n) end
+		end
+		p.names = nil
+	end
+	key = key or RF:LensKey()
+	p.byLens[key] = p.byLens[key] or {}
+	return p.byLens[key]
+end
+
+--- Who is pinned, in order, each once and five at most, by the lens: its
+--  role pins - the Main Tanks and tanks, or the tanks but you, and the
+--  healers - then the names you pinned under it who are in the raid. Read from
+--  the roster, so out of combat: GetRaidRosterInfo's tenth answer is the raid
+--  role (MAINTANK - what a raid leader sets on Era, where a role is opt-in),
+--  its twelfth the assigned one.
+function RF:PinNames(lens, key)
+	lens = lens or self:LensFor(self:LensKey())
+	local pins = lens.pins or {}
 	local out, seen, here = {}, {}, {}
 	local function add(name)
 		if name and not seen[name] and #out < PINS then
@@ -548,33 +676,36 @@ function RF:PinNames()
 			here[name] = true
 		end
 	end
-	if c.pinTanks then
+	local me = Secretless(UnitName and UnitName("player"))
+	local function tank(r) return r.role == "MAINTANK" or r.assigned == "TANK" end
+	if pins.tanks or pins.otherTanks then
 		for _, r in ipairs(roster) do
-			if r.role == "MAINTANK" or r.assigned == "TANK" then add(r.name) end
+			if tank(r) and not (pins.otherTanks and r.name == me) then add(r.name) end
 		end
 	end
-	if c.pinHealers then
+	if pins.healers then
 		for _, r in ipairs(roster) do
 			if r.assigned == "HEALER" then add(r.name) end
 		end
 	end
-	for _, name in ipairs(PinStore().names) do
+	for _, name in ipairs(PinStore(key)) do
 		if here[name] then add(name) end
 	end
 	return out
 end
 
 function RF:IsPinned(name)
-	for _, n in ipairs(PinStore().names) do
+	for _, n in ipairs(PinStore()) do
 		if n == name then return true end
 	end
 	return false
 end
 
---- Pin or unpin someone by name, kept per character. The row is laid out
---  again out of combat; in a fight that waits, and says so.
+--- Pin or unpin someone by name under the lens in use, kept per character.
+--  The row is laid out again out of combat; in a fight that waits, and says
+--  so.
 function RF:SetPinned(name, on)
-	local names = PinStore().names
+	local names = PinStore()
 	for i = #names, 1, -1 do
 		if names[i] == name then table.remove(names, i) end
 	end
@@ -583,13 +714,14 @@ function RF:SetPinned(name, on)
 	self:Layout()
 end
 
---- What the row's label says: PINNED, then what pins it.
-local function PinRule()
-	local c, parts = cfg(), {}
-	if c.pinTanks then parts[#parts + 1] = L.raid.pinned_tanks end
-	if c.pinHealers then parts[#parts + 1] = L.raid.pinned_healers end
-	if #PinStore().names > 0 then parts[#parts + 1] = L.raid.pinned_names end
-	if c.pinBossTarget then parts[#parts + 1] = L.raid.pinned_boss end
+--- What the row's label says: PINNED, then what pins it under this lens.
+local function PinRule(lens, key)
+	local pins, parts = lens.pins or {}, {}
+	if pins.tanks then parts[#parts + 1] = L.raid.pinned_tanks end
+	if pins.otherTanks then parts[#parts + 1] = L.raid.pinned_other_tanks end
+	if pins.healers then parts[#parts + 1] = L.raid.pinned_healers end
+	if #PinStore(key) > 0 then parts[#parts + 1] = L.raid.pinned_names end
+	if pins.boss then parts[#parts + 1] = L.raid.pinned_boss end
 	local s = L.raid.pinned
 	if parts[1] then s = s .. " \194\183 " .. table.concat(parts, " \194\183 ") end
 	return s:upper()
@@ -850,24 +982,32 @@ function RF:Layout()
 	-- 2026-10-24). Here, out of combat: the weave carries secure frames.
 	self.weave:SetScale(A.db.profile.scale or 1)
 
+	-- THE LENS, taken once, here, so all of it applies together.
+	local key = self:LensKey()
+	local lens = self:LensFor(key)
+	self.lens, self.lensKey = lens, key
+
 	local n = (GetNumGroupMembers and GetNumGroupMembers()) or 0
-	local d = DensityFor(n)
+	-- A lens may lock the density (Compact: the 40-man cell).
+	local d = DensityFor(lens.density or n)
 	local g = Gaps(d)
 	self.density = d
 
-	local used = {}
+	local used, members = {}, {}
 	if IsInRaid and IsInRaid() and GetRaidRosterInfo then
 		for i = 1, n do
 			local _, _, sub = GetRaidRosterInfo(i)
-			if sub then used[sub] = true end
+			if sub then
+				used[sub] = true
+				members[sub] = (members[sub] or 0) + 1
+			end
 		end
 	end
 
 	-- THE PINS, a row above the weave under their label, as wide as their
 	-- count allows; the weave starts 16 below them (README, "Pin").
-	local c = cfg()
-	local names = self:PinNames()
-	local bossOn = c.pinBossTarget and true or false
+	local names = self:PinNames(lens, key)
+	local bossOn = lens.pins and lens.pins.boss and true or false
 	local count = #names + (bossOn and 1 or 0)
 	local ph, boss = self.pinHeader, self.bossPin
 	local y, pinsY = 0, nil
@@ -879,7 +1019,7 @@ function RF:Layout()
 		local pH = A.Config:Module("partyframes").height
 		local k = PIN_H / pH
 		local pw = PIN_W[math.min(count, PINS)] / k
-		self.pinLabel:SetText(PinRule())
+		self.pinLabel:SetText(PinRule(lens, key))
 		self.pinLabel:ClearAllPoints()
 		self.pinLabel:SetPoint("TOPLEFT", self.weave, "TOPLEFT", BOND, 0)
 		local rowY = PIN_LABEL_H + PIN_LABEL_GAP
@@ -915,8 +1055,14 @@ function RF:Layout()
 		boss:Hide()
 	end
 
+	-- THE GROUPS: rows, each opening with its number, or - under a lens that
+	-- asks for them (Compact) - columns from the bond, each under its number
+	-- (Raid.dc.html 13d), growing down.
 	local first, last
 	local top = y
+	local columns = lens.columns
+	local colTop = top + COL_NUMBER_H + COL_NUMBER_GAP
+	local x = BOND
 	for gi, h in ipairs(self.headers) do
 		h:SetAttribute("cellW", d.w)
 		h:SetAttribute("cellH", d.h)
@@ -927,28 +1073,52 @@ function RF:Layout()
 				LayoutCell(cell, d)
 			end
 		end
-		h:ClearAllPoints()
-		h:SetPoint("TOPLEFT", self.weave, "TOPLEFT", ROWS_X, -y)
-		-- Any attribute set while shown re-lays the header out.
-		h:SetAttribute("xOffset", g.cell)
-
 		local label = self.labels[gi]
 		label:ClearAllPoints()
-		label:SetPoint("LEFT", self.weave, "TOPLEFT", BOND, -y - d.h / 2)
-		label:SetWidth(NUMBER)
 		Media:SetFont(label, "unitName", d.font - 2)
 		label._aetherSize = d.font - 2
 		label:SetShown(used[gi] == true)
-
-		if used[gi] then
-			first = first or (y + d.h / 2)
-			last = y + d.h / 2
-			y = y + d.h + g.group
+		h:ClearAllPoints()
+		-- Any attribute set while shown re-lays the header out.
+		if columns then
+			h:SetPoint("TOPLEFT", self.weave, "TOPLEFT", x, -colTop)
+			h:SetAttribute("point", "TOP")
+			h:SetAttribute("xOffset", 0)
+			h:SetAttribute("yOffset", -g.cell)
+			label:SetJustifyH("CENTER")
+			label:SetWidth(d.w)
+			label:SetPoint("TOP", self.weave, "TOPLEFT", x + d.w / 2, -top)
+			if used[gi] then x = x + d.w + g.group end
+		else
+			h:SetPoint("TOPLEFT", self.weave, "TOPLEFT", ROWS_X, -y)
+			h:SetAttribute("point", "LEFT")
+			h:SetAttribute("yOffset", 0)
+			h:SetAttribute("xOffset", g.cell)
+			label:SetJustifyH("LEFT")
+			label:SetWidth(NUMBER)
+			label:SetPoint("LEFT", self.weave, "TOPLEFT", BOND, -y - d.h / 2)
+			if used[gi] then
+				first = first or (y + d.h / 2)
+				last = y + d.h / 2
+				y = y + d.h + g.group
+			end
 		end
 	end
 
-	local width = math.max(ROWS_X + PER_GROUP * d.w + (PER_GROUP - 1) * g.cell, pinsWidth)
-	local height = math.max(top + d.h, y - g.group)
+	local width, height
+	if columns then
+		-- The bond from the numbers' row down to the foot of the tallest column.
+		local most = 1
+		for _, m in pairs(members) do most = math.max(most, m) end
+		local colH = most * (d.h + g.cell) - g.cell
+		first = top + COL_NUMBER_H / 2
+		last = colTop + colH
+		width = math.max(math.max(x - g.group, BOND + d.w), pinsWidth)
+		height = colTop + colH
+	else
+		width = math.max(ROWS_X + PER_GROUP * d.w + (PER_GROUP - 1) * g.cell, pinsWidth)
+		height = math.max(top + d.h, y - g.group)
+	end
 	self.weave:SetSize(width, height)
 	-- No one in a group yet (out of a raid): the bond on the first row.
 	self:LayBond(first or (top + d.h / 2), last or (top + d.h / 2), pinsY)
@@ -978,7 +1148,8 @@ local function Tick(_, elapsed)
 	rangeClock = rangeClock + (elapsed or 0.1)
 	if rangeClock < 0.5 then return end
 	rangeClock = 0
-	for _, cell in ipairs(RF:Cells()) do W.RangeAlpha(cell, cell.unit, 0.45) end
+	local fade = RF:FadeTo()
+	for _, cell in ipairs(RF:Cells()) do W.RangeAlpha(cell, cell.unit, fade) end
 	-- The pins as the party capsules are, on a tick - the boss's target among
 	-- them, which changes with no event on the unit it names.
 	for _, pin in ipairs(RF:Pins()) do
@@ -1001,6 +1172,13 @@ function RF:HookMenu()
 		root:CreateDivider()
 		root:CreateButton(pinned and L.raid.unpin or L.raid.pin,
 			function() RF:SetPinned(name, not pinned) end)
+		-- THE LENS, chosen here (README: "overridable ... from the weave's
+		-- right-click menu"), per character; Auto says which it would pick.
+		local sub = root:CreateButton(L.raid.lens)
+		local function isSel(k) return (LensStore().chosen or "auto") == k end
+		local function set(k) RF:SetLens(k ~= "auto" and k or nil) end
+		sub:CreateRadio(A.F(L.raid.lens_auto, LENS_NAME[RF:AutoLens()]), isSel, set, "auto")
+		for _, k in ipairs(LENS_ORDER) do sub:CreateRadio(LENS_NAME[k], isSel, set, k) end
 	end
 	-- A raid member's menu, whichever the client picks for them.
 	for _, tag in ipairs({ "MENU_UNIT_RAID_PLAYER", "MENU_UNIT_RAID", "MENU_UNIT_PARTY" }) do
@@ -1037,6 +1215,12 @@ function RF:RegisterEvents()
 	end
 	A:RegisterEvent(self, "GROUP_ROSTER_UPDATE",   sweep)
 	A:RegisterEvent(self, "PLAYER_ROLES_ASSIGNED", sweep)
+	-- Leading or not decides the Auto lens.
+	A:RegisterEvent(self, "PARTY_LEADER_CHANGED",  sweep)
+	-- Lead's marks on the dots.
+	A:RegisterEvent(self, "RAID_TARGET_UPDATE", function()
+		for _, cell in ipairs(RF:Cells()) do UpdateName(cell) end
+	end)
 	A:RegisterEvent(self, "PLAYER_ENTERING_WORLD", sweep)
 	A:RegisterEvent(self, "PLAYER_TARGET_CHANGED", function()
 		for _, cell in ipairs(RF:Cells()) do UpdateTarget(cell) end
