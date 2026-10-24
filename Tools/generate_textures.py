@@ -899,6 +899,27 @@ def bar_mask():
     return rgba_lum(1.0, rrect_mask((1024, 32), 16, margin=0.5))
 
 
+# The raid cells' sizes, one per density (Modules/RaidFrames.lua, DENSITY).
+CELL_SIZES = ((120, 34), (112, 30), (96, 28), (60, 24))
+
+
+def cell_mask(w, h):
+    """A raid cell's health fill, rounded as the cell is (Joe, 2026-10-24: the
+    fill ran square past the cell's round corners).
+
+    The fill sits inside the cell's one-unit rim, so it is (w-2) x (h-2) with
+    the cell's radius, h/4, less that rim. bar_mask's lesson applies: a mask
+    keeps its corners only at the shape's own proportions, and a cell is 3.5:1
+    where a bar is 30:1. So each density gets its own, drawn at the fill's
+    proportions eight times over and resampled onto a 256x64 sheet, which the
+    client stretches back to exactly the fill.
+    """
+    fw, fh, k = w - 2, h - 2, 8
+    hi = rrect_mask((fw * k, fh * k), (h / 4.0 - 1) * k, margin=0.5)
+    lo = Image.fromarray(hi.astype(np.float32), mode="F").resize((256, 64), Image.LANCZOS)
+    return rgba_lum(1.0, np.clip(np.asarray(lo, dtype=np.float32), 0.0, 1.0))
+
+
 def bar_glow():
     """Additive bloom laid over a bar fill (cast bar, xp bar)."""
     size = (128, 32)
@@ -1888,6 +1909,10 @@ ASSETS = {
     "Bar-Smooth": bar_smooth,
     "Bar-Flat": bar_flat,
     "Bar-Mask": bar_mask,
+    "Cell-Mask-120": lambda: cell_mask(120, 34),
+    "Cell-Mask-112": lambda: cell_mask(112, 30),
+    "Cell-Mask-96": lambda: cell_mask(96, 28),
+    "Cell-Mask-60": lambda: cell_mask(60, 24),
     "Bar-Glow": bar_glow,
     "Glow-Soft": glow_soft,
     "Vignette": vignette,

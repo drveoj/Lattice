@@ -227,7 +227,12 @@ local function DressCell(cell)
 
 	Glass.MakePanel(cell, { corner = 8, fill = "glass", edge = "glassEdge" })
 
-	-- The fill, behind the row, from the left.
+	-- RIGHT-CLICK TOO. The template answers the left button alone, so the
+	-- unit menu never opened from a cell (Joe, 2026-10-24). Here, at login and
+	-- out of combat, where the call is allowed.
+	cell:RegisterForClicks("AnyUp")
+
+	-- The fill, behind the row, from the left, inside the rim.
 	local fill = CreateFrame("StatusBar", nil, cell)
 	fill:SetPoint("TOPLEFT", cell, "TOPLEFT", 1, -1)
 	fill:SetPoint("BOTTOMRIGHT", cell, "BOTTOMRIGHT", -1, 1)
@@ -235,6 +240,10 @@ local function DressCell(cell)
 	fill:SetMinMaxValues(0, 1)
 	fill:SetValue(1)
 	fill:SetFrameLevel(cell:GetFrameLevel())
+	-- ROUNDED AS THE CELL IS, by the bars' own method (W.AddMask, as
+	-- W.CreateBar): it ran square past the round corners (Joe, 2026-10-24).
+	-- The mask is the density's, set again in LayoutCell.
+	cell.fillMask = W.AddMask(fill:GetStatusBarTexture(), fill, Media.texture.cellMask[120], fill)
 	cell.fill = fill
 
 	-- Content rides above the fill.
@@ -301,6 +310,10 @@ local function LayoutCell(cell, d)
 	cell:SetSize(d.w, d.h)
 	Glass.SetPanelCorner(cell, d.h / 4)
 	Glass.SetPanelCorner(cell.sel, d.h / 4)
+	if cell.fillMask and Media.texture.cellMask[d.w] then
+		cell.fillMask:SetTexture(Media.texture.cellMask[d.w],
+			"CLAMPTOBLACKADDITIVE", "CLAMPTOBLACKADDITIVE")
+	end
 
 	cell.dot:ClearAllPoints()
 	cell.dot:SetSize(g.dot, g.dot)
@@ -611,6 +624,8 @@ end
 local function DressPin(pin)
 	if pin.dressed then return end
 	pin.dressed = true
+	-- Right-click too, as the cells (DressCell).
+	pin:RegisterForClicks("AnyUp")
 	PartyModule().BuildCapsule(pin:GetAttribute("unit"), pin)
 	pin:HookScript("OnEnter", function(self) RF:CopyHighlight(self, true) end)
 	pin:HookScript("OnLeave", function(self) RF:CopyHighlight(self, false) end)
@@ -815,6 +830,12 @@ end
 function RF:Layout()
 	if InCombatLockdown() then self.pendingLayout = true return end
 	self.pendingLayout = nil
+
+	-- THE PROFILE'S SCALE, as every frame here is drawn at, the party stack's
+	-- way (PartyFrames.lua, PF:Layout). The weave had none, so the raid -
+	-- pins most of all - drew a size apart from everything else (Joe,
+	-- 2026-10-24). Here, out of combat: the weave carries secure frames.
+	self.weave:SetScale(A.db.profile.scale or 1)
 
 	local n = (GetNumGroupMembers and GetNumGroupMembers()) or 0
 	local d = DensityFor(n)

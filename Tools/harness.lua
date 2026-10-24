@@ -36437,6 +36437,23 @@ section("raid frames: the weave", function()
 		.. tostring(A1.__w) .. " x " .. tostring(A1.__h) .. ")")
 	check(RF.labels[3]:IsShown() and not RF.labels[4]:IsShown(),
 		"a group number for each group with anyone in it, and none for the rest")
+
+	-- JOE, 2026-10-24: the raid drew at its own size, right-click did nothing,
+	-- and the fill ran square past the cell's round corners.
+	local keepScale = A.db.profile.scale
+	A.db.profile.scale = 0.71
+	RF:OnConfigChanged()
+	check(math.abs(RF.weave:GetScale() - 0.71) < 1e-6,
+		"the raid is drawn at the profile's scale, as every frame is (" .. tostring(RF.weave:GetScale()) .. ")")
+	A.db.profile.scale = keepScale
+	RF:OnConfigChanged()
+	check(A1.__clicks and A1.__clicks[1] == "AnyUp",
+		"a cell answers the right button too, so the unit menu opens")
+	local fillTex = A1.fill:GetStatusBarTexture()
+	check(A1.fillMask and fillTex.__masks[1] == A1.fillMask
+		and A1.fillMask:GetTexture() == A.Media.texture.cellMask[112],
+		"the fill is masked round to its cell, by its density's own mask ("
+		.. tostring(A1.fillMask and A1.fillMask:GetTexture()) .. ")")
 	check(A1.name:GetText() == "Member1" and A1.role:GetText() == "T",
 		"a cell carries the name and, for a tank, the T tag")
 	check(RF.headers[1]:GetAttribute("child2").role:GetText() == "",
@@ -36521,6 +36538,7 @@ section("raid frames: the weave", function()
 	check(P1 and P1.dressed and P1.unit == "raid1" and P1:IsShown() and P1.glass:IsShown()
 		and P1.name:GetText() == "Member1",
 		"pinning tanks puts the tank above the weave as a party capsule (" .. tostring(P1 and P1.unit) .. ")")
+	check(P1.__clicks and P1.__clicks[1] == "AnyUp", "and it answers the right button too")
 	check(P1.__w == 250 and RF.pinLabel:IsShown()
 		and RF.pinLabel:GetText() == ("Pinned \194\183 Tanks"):upper(),
 		"250 wide for one, under its label (" .. tostring(P1.__w) .. ", " .. tostring(RF.pinLabel:GetText()) .. ")")

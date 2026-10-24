@@ -88,6 +88,14 @@ Media.texture = {
 	flat        = TEX .. "Bar-Flat",
 	barGlow     = TEX .. "Bar-Glow",
 	barMask     = TEX .. "Bar-Mask",
+	-- A raid cell's health fill, rounded as its cell is: one per density, by
+	-- the cell's width, each drawn at that fill's own proportions.
+	cellMask    = {
+		[120] = TEX .. "Cell-Mask-120",
+		[112] = TEX .. "Cell-Mask-112",
+		[96]  = TEX .. "Cell-Mask-96",
+		[60]  = TEX .. "Cell-Mask-60",
+	},
 
 	-- misc
 	glow        = TEX .. "Glow-Soft",
