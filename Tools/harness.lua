@@ -12489,12 +12489,32 @@ section("party: four capsules in fixed slots", function()
 	PF:HideBlizzard()
 	check(_G.__blocked == blocked,
 		"asking mid-fight refuses quietly rather than erroring")
-	check(PartyFrame:IsShown(),
+	check(PartyFrame:IsVisible(),
 		"and the frame is still there, because the client would not have it")
 	_G.__inCombat = false
 	fire("PLAYER_REGEN_ENABLED")
-	check(not PartyFrame:IsShown(),
+	-- Parked, so its own flag is kept: gone means not visible.
+	check(not PartyFrame:IsVisible(),
 		"the moment the fight ends, it goes")
+
+	-- PARKED, NOT DEAFENED: the raid manager keeps its events, which are what
+	-- show Blizzard's raid frames on Era (Joe, 2026-10-24: with our raid frames
+	-- off, Blizzard's stayed hidden).
+	local mgr = CompactRaidFrameManager
+	mgr:RegisterEvent("GROUP_ROSTER_UPDATE")
+	PF:HideBlizzard()
+	check(mgr:IsEventRegistered("GROUP_ROSTER_UPDATE") and A.homes[mgr] == UIParent,
+		"the raid manager is parked with its events, and its home remembered")
+
+	-- AND THE SETTING TURNED OFF GIVES THEM BACK, no reload.
+	local pc = A.Config:Module("partyframes")
+	pc.hideBlizzard = false
+	PF:OnConfigChanged()
+	check(PartyFrame:IsVisible() and mgr:GetParent() == UIParent,
+		"hiding Blizzard's party frames turned off brings them back at once")
+	pc.hideBlizzard = true
+	PF:OnConfigChanged()
+	check(not PartyFrame:IsVisible(), "and on again puts them away")
 end)
 
 section("party: what a capsule says about the person", function()
@@ -36338,8 +36358,26 @@ section("raid frames: the weave", function()
 		"and then takes the 25-man density (" .. tostring(A1.__w) .. ")")
 
 	-- BLIZZARD'S RAID FRAMES GO WHILE THE WEAVE IS ON.
-	check(RF.hideReport == "hidden" and not CompactRaidFrameContainer:IsShown(),
+	local CRF = CompactRaidFrameContainer
+	check(RF.hideReport == "hidden" and not CRF:IsVisible(),
 		"Blizzard's raid frames are banished (" .. tostring(RF.hideReport) .. ")")
+
+	-- AND GIVEN BACK WITHOUT A RELOAD (Joe, 2026-10-24: set to show, they did
+	-- not; with our raid frames off, they stayed hidden). Parked, the container
+	-- keeps the shown flag the client's manager gives it.
+	CRF:Show()
+	local rc = A.Config:Module("raidframes")
+	rc.hideBlizzard = false
+	RF:OnConfigChanged()
+	check(CRF:GetParent() == UIParent and CRF:IsVisible() and RF.hideReport == "shown",
+		"hiding Blizzard's raid frames turned off brings them back at once")
+	rc.hideBlizzard = true
+	RF:OnConfigChanged()
+	check(not CRF:IsVisible(), "and on again puts them away")
+	A:SetModuleEnabled("raidframes", false)
+	check(CRF:IsVisible(), "our raid frames turned off brings Blizzard's back")
+	A:SetModuleEnabled("raidframes", true)
+	check(RF.enabled and not CRF:IsVisible(), "and on again puts them away")
 
 	-- OUT OF THE RAID, THE WEAVE GOES (the party capsules take over).
 	_G.__inRaid = false

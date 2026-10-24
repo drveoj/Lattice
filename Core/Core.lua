@@ -575,16 +575,44 @@ local hider
 --  REFUSED IN COMBAT, and silently: most of these carry a secure template,
 --  so Hide and SetParent on them are protected calls. Nothing here is urgent
 --  enough to be worth an error in a fight.
-function A:Banish(frame)
+--
+--  `park` KEEPS ITS EVENTS and its own shown flag, and remembers its home, so
+--  A:Unbanish can give it back without a reload. For a frame a setting can
+--  ask for again, and for one that drives another: on Era the raid manager's
+--  events are what show the raid frames (Blizzard_CompactRaidFrameManager.lua
+--  :50-60, :116-127, :434-436), so a deaf manager kept them down for good.
+function A:Banish(frame, park)
 	if not frame then return false end
 	if InCombatLockdown and InCombatLockdown() then return false end
 	if not hider then hider = A:ParkingFrame(ADDON .. "Hider") end
 	A.banished[frame] = true
 	local ok = pcall(function()
-		frame:UnregisterAllEvents()
-		frame:Hide()
+		if park then
+			local home = frame:GetParent()
+			if home ~= hider then A.homes[frame] = home end
+		else
+			frame:UnregisterAllEvents()
+			frame:Hide()
+		end
 		frame:SetParent(hider)
 	end)
+	return ok
+end
+
+A.homes = A.homes or setmetatable({}, { __mode = "k" })
+
+--- Put a parked frame back where it lived. Whether it then shows is the
+--  client's call, from the flag it kept. Out of combat only; a frame put away
+--  deaf has no way back short of a reload, and says so with false.
+function A:Unbanish(frame)
+	local home = frame and A.homes[frame]
+	if not home then return false end
+	if InCombatLockdown and InCombatLockdown() then return false end
+	local ok = pcall(frame.SetParent, frame, home)
+	if ok then
+		A.banished[frame] = nil
+		A.homes[frame] = nil
+	end
 	return ok
 end
 

@@ -138,17 +138,30 @@ local BLIZZARD = { "PartyFrame", "CompactPartyFrame", "CompactRaidFrameManager" 
 --  so banishing is refused while you are in a fight - and a party you join
 --  mid-fight is one whose frames arrive in the one window where nothing can
 --  be done about them.
+--
+--  PARKED, NOT DEAFENED. The manager's events are what show Blizzard's raid
+--  frames on Era, so a deaf manager hid those too, whatever the raid page
+--  said (Joe, 2026-10-24). Parked, each keeps working out of sight and comes
+--  back when the setting or the module is turned off.
 function PF:HideBlizzard()
-	if not cfg().hideBlizzard then return end
+	if not cfg().hideBlizzard then return self:ShowBlizzard() end
 	self.hideReport = self.hideReport or {}
 	for _, name in ipairs(BLIZZARD) do
 		local f = _G[name]
 		if not f then
 			self.hideReport[name] = "absent"
 		else
-			A:Banish(f)
-			self.hideReport[name] = f:IsShown() and "STILL SHOWN" or "hidden"
+			A:Banish(f, true)
+			self.hideReport[name] = f:IsVisible() and "STILL SHOWN" or "hidden"
 		end
+	end
+end
+
+--- Give them back. In a fight this is refused, and the next sweep asks again.
+function PF:ShowBlizzard()
+	for _, name in ipairs(BLIZZARD) do
+		local f = _G[name]
+		if f and A.homes[f] then A:Unbanish(f) end
 	end
 end
 
@@ -969,6 +982,7 @@ function PF:OnDisable()
 	if UnregisterStateDriver then UnregisterStateDriver(self.stack, "visibility") end
 	self.stack:Hide()
 	if self.panel then self.panel:Hide() end
+	self:ShowBlizzard()
 	-- The node goes with the module.
 	Trunk():Refresh()
 end
@@ -986,6 +1000,7 @@ end
 
 function PF:OnConfigChanged()
 	if not self.stack then return end
+	self:HideBlizzard()
 
 	-- Not in a fight. Every capsule holds a secure button and SetSize on the
 	-- frame under one is refused while the lockdown is on; the change is worth

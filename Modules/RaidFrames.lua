@@ -107,12 +107,18 @@ local HEALTH_STOPS = { { 0, CORAL }, { LOW, GREEN } }
 
 --- The client's raid frames. Shown until now on purpose (Joe, 2026-10-23:
 --  the party capsules give way to them in a raid); the weave replaces them.
---  Banished like the party's, and asked again on every roster change,
---  because a banish is refused in a fight.
+--  Parked, and asked again on every roster change, because a park is refused
+--  in a fight. Parked rather than deafened so the setting, or the module,
+--  turned off gives them back at once (Joe, 2026-10-24).
 function RF:HideBlizzard()
-	if not cfg().hideBlizzard then return end
+	if not (self.enabled and cfg().hideBlizzard) then return self:ShowBlizzard() end
 	local f = _G.CompactRaidFrameContainer
-	self.hideReport = f and (A:Banish(f) and "hidden" or "refused") or "absent"
+	self.hideReport = f and (A:Banish(f, true) and "hidden" or "refused") or "absent"
+end
+
+function RF:ShowBlizzard()
+	local f = _G.CompactRaidFrameContainer
+	if f and A.homes[f] and A:Unbanish(f) then self.hideReport = "shown" end
 end
 
 -- ---------------------------------------------------------------------------
@@ -647,6 +653,11 @@ function RF:OnDisable()
 	if not self.weave then return end
 	if UnregisterStateDriver then UnregisterStateDriver(self.weave, "visibility") end
 	self.weave:Hide()
+	self:ShowBlizzard()
+end
+
+function RF:OnConfigChanged()
+	self:HideBlizzard()
 end
 
 function RF:OnSkinChanged()
