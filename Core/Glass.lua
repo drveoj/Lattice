@@ -597,7 +597,7 @@ function Glass.MakePanel(f, opts)
 	f._fill = Build9(f, Media.texture.panel, "BACKGROUND", 0)
 	ApplyTexCoords(f._fill, Media.slice.panel, Media.textureSize.panel)
 
-	f._edge = Build9(f, Media.texture.panelEdge, "BORDER", 0)
+	f._edge = Build9(f, Media.texture.panelEvenEdge, "BORDER", 0)
 	ApplyTexCoords(f._edge, Media.slice.panel, Media.textureSize.panel)
 	f._art = "big"
 
@@ -655,10 +655,11 @@ Glass.PANEL_ART_MIN = 16
 --  gap cannot clear it everywhere. A header rule stopping W.RULE_GAP short still
 --  ran into the rim of the options window and the quest log (Joe, 2026-10-12),
 --  and at a bigger corner it reaches further in. Measured from the art, the last
---  texel with alpha over 2% along a side: 6 of Glass-Panel-Edge's 64, 5 of
---  Glass-Panel-Small-Edge's 16. Re-run tools/generate_textures.py and re-measure
---  if the rim changes.
-local RIM_DEPTH = { big = 6 / 64, small = 5 / 16 }
+--  texel with alpha over 2% along a side: 14 of Glass-Panel-Even-Edge's 64, 5
+--  of Glass-Panel-Small-Edge's 16. Re-run tools/generate_textures.py and
+--  re-measure if the rim changes. (The two differ only by the margin, which
+--  is two texels of each: the lit band is 3/16 of the corner in both.)
+local RIM_DEPTH = { big = 14 / 64, small = 5 / 16 }
 
 function Glass.RimDepth(f)
 	if not f or not f._kind then return 0 end
@@ -684,7 +685,9 @@ function Surface:_PickPanelArt(c)
 	self._art = want
 	local small = (want == "small")
 	local fill = small and Media.texture.panelSmall or Media.texture.panel
-	local edge = small and Media.texture.panelSmallEdge or Media.texture.panelEdge
+	-- The rim at either size is the same share of the corner (Media's
+	-- panelEvenEdge): only the fill changes with the art.
+	local edge = small and Media.texture.panelSmallEdge or Media.texture.panelEvenEdge
 	local size = small and Media.textureSize.panelSmall or Media.textureSize.panel
 	for i = 1, #self._fill do self._fill[i]:SetTexture(fill) end
 	for i = 1, #self._edge do self._edge[i]:SetTexture(edge) end

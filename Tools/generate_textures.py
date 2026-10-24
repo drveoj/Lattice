@@ -386,6 +386,27 @@ def glass_panel_small():
     return rgba_lum(1.0, rrect_mask(size, 16))
 
 
+def glass_panel_even_edge():
+    """The rim the panel wears: Glass-Panel-Small-Edge's, at Glass-Panel's size.
+
+    THE SAME RIM AT EVERY SIZE. A rim is part of the edge art, so it scales
+    with the corner, and the two arts had different proportions: the small
+    one's rim is (peak 1 + width 2) of a 16-texel corner, glass_panel_edge's
+    (1 + 3.6) of 64 - under half as much. Crossing PANEL_ART_MIN, the bigger
+    panel got the thinner rim (Joe, 2026-10-24: action bars 1 and 2 at scale
+    1.0 drew about one physical pixel where the bars at 0.85 drew two - "surely
+    at bigger scale those borders would look thicker, not thinner").
+
+    So this is the small rim scaled by four - peak 4, width 8 of a 64-texel
+    corner - and even all the way round like it. On glass_panel's 256 and its
+    MARGIN, so its outer edge lands on the frosted fill's exactly: the small
+    rim's two-texel margin is 2 of 64, and laid over this fill it would sit a
+    texel and a half inside the glass.
+    """
+    size = (256, 256)
+    return rgba_lum(1.0, rim_from_sdf(rrect_sdf(size, 64, MARGIN), 8.0, peak=4.0))
+
+
 def glass_panel_small_edge():
     """Its rim: even all the way round, about one physical pixel at 2x.
 
@@ -1880,6 +1901,7 @@ ASSETS = {
     "Glass-Panel": glass_panel,
     "Glass-Panel-Solid": glass_panel_solid,
     "Glass-Panel-Edge": glass_panel_edge,
+    "Glass-Panel-Even-Edge": glass_panel_even_edge,
     "Glass-Panel-Small": glass_panel_small,
     "Glass-Panel-Small-Edge": glass_panel_small_edge,
     "Glass-Pill": glass_pill,
