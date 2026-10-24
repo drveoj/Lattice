@@ -99,6 +99,11 @@ local ROOT = 8   -- the root node, r = 4
 -- their label, as wide as their count allows, the weave 16 below them.
 local PINS = 5
 local PIN_W = { 250, 250, 220, 190, 190 }
+-- 44 tall: a 36 disc and 4 above and below it. Our party capsule is 52 with a
+-- 38 disc, which stood too big over the cells (Joe, 2026-10-24), so a pin is
+-- the capsule drawn at 44/52 - every part of it, in proportion - and given
+-- the width that comes back to the handoff's on screen.
+local PIN_H = 44
 local PIN_GAP = 10
 local PIN_LABEL_H, PIN_LABEL_GAP = 12, 10
 local PIN_TO_WEAVE = 16
@@ -861,14 +866,20 @@ function RF:Layout()
 	local pinsWidth = 0
 	self.pinLabel:SetShown(count > 0)
 	if count > 0 then
-		local pw = PIN_W[math.min(count, PINS)]
+		-- In the pins' own units, at their scale k: a width and an offset
+		-- given here come out k times as long on screen.
 		local pH = A.Config:Module("partyframes").height
+		local k = PIN_H / pH
+		local pw = PIN_W[math.min(count, PINS)] / k
 		self.pinLabel:SetText(PinRule())
 		self.pinLabel:ClearAllPoints()
 		self.pinLabel:SetPoint("TOPLEFT", self.weave, "TOPLEFT", BOND, 0)
 		local rowY = PIN_LABEL_H + PIN_LABEL_GAP
+		ph:SetScale(k)
+		boss:SetScale(k)
 		ph:SetAttribute("pinW", pw)
 		ph:SetAttribute("pinH", pH)
+		ph:SetAttribute("xOffset", PIN_GAP / k)
 		for i = 1, PINS do
 			local pin = ph:GetAttribute("child" .. i)
 			if pin then
@@ -879,12 +890,12 @@ function RF:Layout()
 		boss:SetSize(pw, pH)
 		PartyModule().LayCapsule(boss, pw)
 		ph:ClearAllPoints()
-		ph:SetPoint("TOPLEFT", self.weave, "TOPLEFT", BOND, -rowY)
+		ph:SetPoint("TOPLEFT", self.weave, "TOPLEFT", BOND / k, -rowY / k)
 		boss:ClearAllPoints()
-		boss:SetPoint("TOPLEFT", ph, "TOPRIGHT", #names > 0 and PIN_GAP or 0, 0)
-		pinsY = rowY + pH / 2
-		pinsWidth = BOND + count * pw + (count - 1) * PIN_GAP
-		y = rowY + pH + PIN_TO_WEAVE
+		boss:SetPoint("TOPLEFT", ph, "TOPRIGHT", #names > 0 and PIN_GAP / k or 0, 0)
+		pinsY = rowY + PIN_H / 2
+		pinsWidth = BOND + count * PIN_W[math.min(count, PINS)] + (count - 1) * PIN_GAP
+		y = rowY + PIN_H + PIN_TO_WEAVE
 	end
 	-- The list last: set while the header is shown, it re-lays it out.
 	ph:SetAttribute("nameList", table.concat(names, ","))

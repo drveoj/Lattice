@@ -36534,14 +36534,21 @@ section("raid frames: the weave", function()
 	RF:OnConfigChanged()
 	local PH = RF.pinHeader
 	local P1 = PH:GetAttribute("child1")
-	local pH = A.Config:Module("partyframes").height
+	-- THE HANDOFF'S SIZE ON SCREEN: 44 tall (our 52 capsule was too big over
+	-- the cells, Joe 2026-10-24), and its widths - a pin's size times its scale.
+	local pH = 44
+	local function across(p) return p.__w * PH:GetScale() end
+	local function near(a, b) return math.abs(a - b) < 0.01 end
 	check(P1 and P1.dressed and P1.unit == "raid1" and P1:IsShown() and P1.glass:IsShown()
 		and P1.name:GetText() == "Member1",
 		"pinning tanks puts the tank above the weave as a party capsule (" .. tostring(P1 and P1.unit) .. ")")
 	check(P1.__clicks and P1.__clicks[1] == "AnyUp", "and it answers the right button too")
-	check(P1.__w == 250 and RF.pinLabel:IsShown()
+	check(near(P1.__h * PH:GetScale(), 44) and near(PH:GetScale(), 44 / A.Config:Module("partyframes").height),
+		"drawn at the handoff's 44 tall, the whole capsule in proportion ("
+		.. tostring(P1.__h * PH:GetScale()) .. ")")
+	check(near(across(P1), 250) and RF.pinLabel:IsShown()
 		and RF.pinLabel:GetText() == ("Pinned \194\183 Tanks"):upper(),
-		"250 wide for one, under its label (" .. tostring(P1.__w) .. ", " .. tostring(RF.pinLabel:GetText()) .. ")")
+		"250 wide for one on screen, under its label (" .. tostring(across(P1)) .. ", " .. tostring(RF.pinLabel:GetText()) .. ")")
 	-- The bond: the root on the pin row, a thin stub to the weave's first row.
 	local rowY = 12 + 10
 	local _, ry3 = at(B.root)
@@ -36576,11 +36583,11 @@ section("raid frames: the weave", function()
 	items[1].fn()
 	local P2 = PH:GetAttribute("child2")
 	check(RF:IsPinned("Member3") and P2.unit == "raid3" and P1.unit == "raid1"
-		and P1.__w == 250 and P2.__w == 250,
+		and near(across(P1), 250) and near(across(P2), 250),
 		"pinned by name: after the tank, still 250 wide for two")
 	check(menuFor("raid3")[1].text == A.L.raid.unpin, "and their menu now offers to unpin them")
 	for _, u in ipairs({ "raid5", "raid7" }) do menuFor(u)[1].fn() end
-	check(P1.__w == 190 and PH:GetAttribute("child4").unit == "raid7",
+	check(near(across(P1), 190) and PH:GetAttribute("child4").unit == "raid7",
 		"four pinned, each 190 wide, in the order pinned")
 
 	-- IN A FIGHT IT WAITS, and says so; the header keeps its people meanwhile.
@@ -36595,8 +36602,8 @@ section("raid frames: the weave", function()
 	_G.__inCombat = false
 	fire("PLAYER_REGEN_ENABLED")
 	check(not RF:IsPinned("Member7") and not PH:GetAttribute("child4"):IsShown()
-		and P1.__w == 220,
-		"and then takes effect (three left, " .. tostring(P1.__w) .. " wide)")
+		and near(across(P1), 220),
+		"and then takes effect (three left, " .. tostring(across(P1)) .. " wide)")
 
 	-- THE BOSS'S TARGET: its own button, on boss1target, shown when there is one.
 	rcfg.pinBossTarget = true
