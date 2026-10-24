@@ -36463,11 +36463,10 @@ section("raid frames: the weave", function()
 	-- PHASE 2, THE GROUP BOND (Raid.dc.html 13b-13d). Three rows at 20-man
 	-- density: 30 high, 5 between groups, so the centres are 15, 50 and 85.
 	-- With nothing pinned: the pins of phase 3 move the root, below.
-	-- Under the Custom lens, whose pins are the three switches (phase 4).
 	local rcfg = A.Config:Module("raidframes")
 	local keepPins = { rcfg.pinTanks, rcfg.pinHealers, rcfg.pinBossTarget }
 	rcfg.pinTanks, rcfg.pinHealers, rcfg.pinBossTarget = false, false, false
-	RF:SetLens("custom")
+	RF:Layout()
 	local B = RF.bond
 	local function at(r) local _, _, _, x, y = r:GetPoint(1) return x, y end
 	local rx, ry = at(B.root)
@@ -36640,104 +36639,72 @@ section("raid frames: the weave", function()
 	rcfg.pinTanks, rcfg.pinHealers, rcfg.pinBossTarget = keepPins[1], keepPins[2], keepPins[3]
 	RF:OnConfigChanged()
 
-	-- PHASE 4, THE LENSES (README, "Lenses").
-	-- AUTO BY ROLE: lead for the leader or an assistant, then tank, healer,
-	-- and Compact for anyone else - which, on Era, is everyone with no role.
-	local plainLeader = UnitIsGroupLeader
-	local meData = _G.__units.player
-	local keepRole = meData.role
-	UnitIsGroupLeader = function() return false end
-	meData.role = nil
-	local autoNone = RF:AutoLens()
-	meData.role = "HEALER"
-	local autoHeal = RF:AutoLens()
-	meData.role = "TANK"
-	local autoTank = RF:AutoLens()
-	_G.__assistants.player = true
-	local autoAssist = RF:AutoLens()
-	_G.__assistants.player = nil
-	UnitIsGroupLeader = function(u) return u == "player" end
-	local autoLead = RF:AutoLens()
-	UnitIsGroupLeader, meData.role = plainLeader, keepRole
-	check(autoNone == "compact" and autoHeal == "healer" and autoTank == "tank"
-		and autoAssist == "lead" and autoLead == "lead",
-		"Auto picks Compact with no role, Healer, Tank, and Lead for the leader or an assistant ("
-		.. table.concat({ autoNone, autoHeal, autoTank, autoAssist, autoLead }, ",") .. ")")
+	-- PHASE 4, PLAIN SETTINGS. The handoff's lenses were built and taken out
+	-- the same day (Joe, 2026-10-24: "I'm not sure about the 'raid lens'
+	-- concept"); each part of one is its own setting.
+	local keepSet = { rcfg.columns, rcfg.cellSize, rcfg.rangeFade, rcfg.raidMarks, rcfg.pinTanks }
+	local items2 = menuFor("raid2")
+	check(#items2 == 1 and items2[1].text == A.L.raid.pin,
+		"a raid member's menu has Pin and nothing else of ours - no lens submenu")
 
-	-- CHOSEN FROM THE MENU, per character: Auto names what it would pick.
-	local lensMenu = menuFor("raid2")[2]
-	check(lensMenu and lensMenu.text == A.L.raid.lens and #lensMenu.items == 6
-		and lensMenu.items[1].data == "auto" and not lensMenu.items[1].isSel("auto")
-		and lensMenu.items[6].data == "custom" and lensMenu.items[6].isSel("custom"),
-		"a raid member's menu has a Raid lens submenu: Auto and the five lenses, the chosen one (Custom) selected")
-	local function choose(k)
-		for _, r in ipairs(menuFor("raid2")[2].items) do
-			if r.data == k then r.set(k) end
-		end
-	end
+	-- RANGE FADE: on unless turned off.
+	check(RF:FadeTo() == 0.45, "members out of range fade by default")
+	rcfg.rangeFade = false
+	RF:OnConfigChanged()
+	check(RF:FadeTo() == 1, "and nobody fades with the setting off")
+	rcfg.rangeFade = keepSet[3]
 
-	-- HEALER: the tanks pinned, threat edges, range fade.
-	choose("healer")
-	check(RF.lensKey == "healer" and A.db.char.raidLens.chosen == "healer"
-		and P1.unit == "raid1" and RF.pinLabel:GetText() == ("Pinned \194\183 Tanks"):upper()
-		and RF:FadeTo() == 0.45,
-		"Healer: the tanks pinned, and members out of range fade")
-
-	-- NAME PINS ARE THE LENS'S OWN.
-	RF:SetPinned("Member3", true)
-	choose("tank")
-	local onTank = RF:IsPinned("Member3")
-	choose("healer")
-	check(RF:IsPinned("Member3") and not onTank,
-		"a name pinned under one lens is not pinned under another")
-	RF:SetPinned("Member3", false)
-
-	-- TANK: the other tanks and the healers, no fade.
-	choose("tank")
-	check(RF.lensKey == "tank" and P1.unit == "raid1" and RF:FadeTo() == 1
-		and RF.pinLabel:GetText():find(A.L.raid.pinned_other_tanks:upper(), 1, true),
-		"Tank: the other tanks and the healers pinned, and nobody fades")
-
-	-- LEAD: the boss's target, and raid marks on the class dots.
-	choose("lead")
+	-- RAID MARKS in place of the class dot: on unless turned off.
+	RF:OnConfigChanged()
 	_G.__raidTargets.raid1 = 8
 	fire("RAID_TARGET_UPDATE")
-	check(RF.lensKey == "lead" and RF.bossPin.__unitWatch and A1.mark:IsShown()
-		and not A1.dot:IsShown() and not PH:GetAttribute("child1"):IsShown(),
-		"Lead: the boss's target pinned, and a raid mark in place of the class dot")
+	check(A1.mark:IsShown() and not A1.dot:IsShown(),
+		"a marked member shows the mark in place of the class dot")
+	rcfg.raidMarks = false
+	RF:OnConfigChanged()
+	check(not A1.mark:IsShown() and A1.dot:IsShown(), "and the dot with the setting off")
+	rcfg.raidMarks = keepSet[4]
 	_G.__raidTargets.raid1 = nil
-	fire("RAID_TARGET_UPDATE")
-	check(A1.dot:IsShown() and not A1.mark:IsShown(), "and the dot back when the mark goes")
 
-	-- COMPACT: no pins, no threat edge, the 40-man cell, groups as columns.
-	choose("compact")
-	local plainThreatC = UnitThreatSituation
-	UnitThreatSituation = function(u) return u == "raid1" and 1 or 0 end
-	fire("UNIT_THREAT_SITUATION_UPDATE", "raid1")
-	UnitThreatSituation = plainThreatC
+	-- CELL SIZE held, whatever the raid.
+	rcfg.cellSize = "40"
+	RF:OnConfigChanged()
+	check(A1.__w == 60 and A1.__h == 24,
+		"a cell size held in the settings is kept whatever the raid (" .. tostring(A1.__w) .. ")")
+
+	-- GROUPS AS COLUMNS (13d): numbers above, columns from the bond.
+	rcfg.pinTanks = false
+	rcfg.columns = true
+	RF:OnConfigChanged()
 	local h1x, h1y = select(4, RF.headers[1]:GetPoint(1))
 	local h2x = select(4, RF.headers[2]:GetPoint(1))
 	local _, rootY = at(B.root)
-	check(RF.lensKey == "compact" and not RF.pinLabel:IsShown() and A1.__w == 60 and A1.__h == 24
-		and A1._edgeToken == "glassEdge",
-		"Compact: nothing pinned, the 40-man cell whatever the size, and no threat edge ("
-		.. tostring(A1.__w) .. " x " .. tostring(A1.__h) .. ")")
 	check(RF.headers[1]:GetAttribute("point") == "TOP" and h1x == 50 and h1y == -16
 		and h2x == 50 + 60 + 4 and rootY == -6,
-		"and the groups as columns from the bond, each under its number (13d) ("
+		"groups as columns, from the bond, each under its number ("
 		.. tostring(h1x) .. ", " .. tostring(h1y) .. ", " .. tostring(h2x) .. ", " .. tostring(rootY) .. ")")
 
-	-- A LENS CHOSEN MID-FIGHT WAITS, as all of the layout does.
+	-- CHANGED MID-FIGHT, it waits, as all of the layout does.
 	_G.__inCombat = true
-	choose("healer")
-	check(RF.lensKey == "compact" and RF.pendingLayout,
-		"a lens chosen in a fight waits for its end")
+	rcfg.columns = false
+	RF:OnConfigChanged()
+	check(RF.view.columns and RF.pendingLayout, "a setting changed in a fight waits for its end")
 	_G.__inCombat = false
 	fire("PLAYER_REGEN_ENABLED")
-	check(RF.lensKey == "healer", "and then applies")
+	check(not RF.view.columns and RF.headers[1]:GetAttribute("point") == "LEFT", "and then applies")
 
-	-- Back to the lens these checks began under.
-	RF:SetLens("custom")
+	-- THE LENSES' NAME LISTS come back as one.
+	local keepPinsStore = A.db.char.raidPins
+	A.db.char.raidPins = { names = {}, byLens = { healer = { "Member3" }, tank = { "Member5", "Member3" } } }
+	A.db.char.raidLens = { chosen = "tank" }
+	check(RF:IsPinned("Member3") and RF:IsPinned("Member5")
+		and A.db.char.raidPins.byLens == nil and A.db.char.raidLens == nil,
+		"names pinned under the old lenses are one list again, and the lens choice is gone")
+	A.db.char.raidPins = keepPinsStore
+
+	rcfg.columns, rcfg.cellSize, rcfg.rangeFade, rcfg.raidMarks, rcfg.pinTanks =
+		keepSet[1], keepSet[2], keepSet[3], keepSet[4], keepSet[5]
+	RF:OnConfigChanged()
 
 	-- HEALTH: the fill's colour and the low number, by the helpers.
 	_G.__units.raid1.hp = 30
@@ -36860,7 +36827,6 @@ section("raid frames: the weave", function()
 	check(outKeys.party and not outKeys.raid, "and the map has its Party node back")
 
 	UnitGroupRolesAssigned = plainRole
-	RF:SetLens(nil)
 	for u, d in pairs(saved) do _G.__units[u] = d end
 	fire("GROUP_ROSTER_UPDATE")
 end)

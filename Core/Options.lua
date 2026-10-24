@@ -1248,6 +1248,21 @@ local function RaidFramesGroup()
 		pinBossTarget = toggle(L.options.raid_frames.pin_boss_target.name,
 			L.options.raid_frames.pin_boss_target.desc, at("pinBossTarget")),
 		pinNames = note(L.options.raid_frames.pin_names),
+		layoutHeader = header(L.options.raid_frames.layout),
+		columns = toggle(L.options.raid_frames.columns.name,
+			L.options.raid_frames.columns.desc, at("columns")),
+		cellSize = choice(L.options.raid_frames.cell_size.name,
+			L.options.raid_frames.cell_size.desc, at("cellSize"), {
+				auto = L.options.raid_frames.cell_size.auto,
+				["10"] = L.options.raid_frames.cell_size.s10,
+				["20"] = L.options.raid_frames.cell_size.s20,
+				["25"] = L.options.raid_frames.cell_size.s25,
+				["40"] = L.options.raid_frames.cell_size.s40,
+			}),
+		rangeFade = toggle(L.options.raid_frames.range_fade.name,
+			L.options.raid_frames.range_fade.desc, at("rangeFade"), { defaultTrue = true }),
+		raidMarks = toggle(L.options.raid_frames.raid_marks.name,
+			L.options.raid_frames.raid_marks.desc, at("raidMarks"), { defaultTrue = true }),
 		placement = note(A.F(L.options.raid_frames.placement, A.Hi("/lattice unlock"))),
 	})
 end

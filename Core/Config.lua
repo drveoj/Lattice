@@ -73,7 +73,8 @@ Config.defaults = {
 
 		-- The raid members you pinned by name (right-click a cell). Per
 		-- character, as the raid handoff has it: who you watch is a matter of
-		-- whose healer you are tonight.
+		-- whose healer you are tonight. One list (the per-lens lists went with
+		-- the lenses, 2026-10-24).
 		raidPins  = { names = {} },
 	},
 
@@ -199,11 +200,21 @@ Config.defaults = {
 				enabled      = true,
 				hideBlizzard = true,
 				-- Who is pinned above the weave as a full capsule (raid build
-				-- phase 3). Tanks by default; the lenses of phase 4 will set
-				-- these by your role.
+				-- phase 3). Tanks by default. Plain settings, not lenses (Joe,
+				-- 2026-10-24: a preset chosen by role was more to explain than
+				-- it was worth).
 				pinTanks      = true,
 				pinHealers    = false,
 				pinBossTarget = false,
+				-- Out-of-range members fade to 45%.
+				rangeFade     = true,
+				-- Groups as columns rather than rows.
+				columns       = false,
+				-- The cell size: "auto" by raid size, or one held at 10, 20,
+				-- 25 or 40's.
+				cellSize      = "auto",
+				-- A raid mark in place of the class dot, on a marked member.
+				raidMarks     = true,
 			},
 
 			-- The class resource tray under the player capsule: combo points
