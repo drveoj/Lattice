@@ -1138,7 +1138,9 @@ function CreateFrame(kind, name, parent, template)
 	-- which is exactly how a tray of secure buff tiles shipped calling SetPoint
 	-- on itself four times per aura change in a fight.
 	local function blocked(self, method)
-		if not _G.__locked() then return false end
+		-- The client's own secure code (a group header anchoring its children)
+		-- may, in a fight or out, as with Hide and Show above.
+		if not _G.__locked() or _G.__secureExec then return false end
 		local p = ProtectedInFamily(self)
 		if not p then return false end
 		fail(("ADDON BLOCKED: %s() on %s, which a protected frame hangs off"
@@ -7444,11 +7446,40 @@ function _G.__updateHeader(h)
 			h.__attrs["child" .. i] = b
 		end
 	end
+	-- AND IT ANCHORS THEM as :196-207 does: the first to the header at
+	-- `point`, each after it to the one before, at the offsets. It adds that
+	-- anchor and NEVER CLEARS the old one from a shown child - only a child it
+	-- hides is cleared (:230) - so a header turned from TOP to LEFT leaves its
+	-- children holding both (Joe, 2026-10-24: rows after columns went
+	-- diagonal). An anchor on a point a region already has replaces it, as
+	-- the client's SetPoint does.
+	local point = tostring(h:GetAttribute("point") or "TOP"):upper()
+	local REL = { TOP = { "BOTTOM", 0, -1 }, BOTTOM = { "TOP", 0, 1 },
+		LEFT = { "RIGHT", 1, 0 }, RIGHT = { "LEFT", -1, 0 } }
+	local rel = REL[point] or { "CENTER", 0, 0 }
+	local function anchor(b, p, to, toP, x, y)
+		for k = #b.__points, 1, -1 do
+			if b.__points[k][1] == p then table.remove(b.__points, k) end
+		end
+		b:SetPoint(p, to, toP, x, y)
+	end
 	local i = 1
 	while h.__attrs["child" .. i] do
 		local b = h.__attrs["child" .. i]
 		local idx = start - 1 + i
 		local unit = (i <= numDisplayed and idx >= 1) and list[idx] or nil
+		-- Secure code, in a fight or out, as the Show and Hide below.
+		_G.__secureExec = true
+		if not unit then
+			b:ClearAllPoints()
+		elseif i == 1 then
+			anchor(b, point, h, point, 0, 0)
+		else
+			anchor(b, point, h.__attrs["child" .. (i - 1)], rel[1],
+				rel[2] * (h:GetAttribute("xOffset") or 0),
+				rel[3] * (h:GetAttribute("yOffset") or 0))
+		end
+		_G.__secureExec = nil
 		b.__attrs.unit = unit
 		local fn = b.__scripts and b.__scripts.OnAttributeChanged
 		if fn then fn(b, "unit", unit) end
@@ -36694,6 +36725,10 @@ section("raid frames: the weave", function()
 		and h2x == 50 + 60 + 4 and rootY == -6,
 		"groups as columns, from the bond, each under its number ("
 		.. tostring(h1x) .. ", " .. tostring(h1y) .. ", " .. tostring(h2x) .. ", " .. tostring(rootY) .. ")")
+	local C2c = RF.headers[1]:GetAttribute("child2")
+	check(C2c:GetNumPoints() == 1 and C2c:GetPoint(1) == "TOP",
+		"and each cell hangs only under the one before, not after it too ("
+		.. tostring(C2c:GetNumPoints()) .. " anchors)")
 
 	-- CHANGED MID-FIGHT, it waits, as all of the layout does.
 	_G.__inCombat = true
@@ -36703,6 +36738,15 @@ section("raid frames: the weave", function()
 	_G.__inCombat = false
 	fire("PLAYER_REGEN_ENABLED")
 	check(not RF.view.columns and RF.headers[1]:GetAttribute("point") == "LEFT", "and then applies")
+	-- JOE, 2026-10-24: back to rows, the cells went diagonal. The header adds
+	-- its new anchor and never clears a shown child's old one, so each cell
+	-- kept "under the one before" as well as "after it".
+	local C2 = RF.headers[1]:GetAttribute("child2")
+	local p2, to2, toP2 = C2:GetPoint(1)
+	check(C2:GetNumPoints() == 1 and p2 == "LEFT"
+		and to2 == RF.headers[1]:GetAttribute("child1") and toP2 == "RIGHT",
+		"back to rows, each cell hangs only after the one before, not under it too ("
+		.. tostring(C2:GetNumPoints()) .. " anchors, first " .. tostring(p2) .. ")")
 
 	-- THE LENSES' NAME LISTS come back as one.
 	local keepPinsStore = A.db.char.raidPins

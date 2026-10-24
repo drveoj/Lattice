@@ -1188,9 +1188,18 @@ function RF:Layout()
 	for gi, h in ipairs(self.headers) do
 		h:SetAttribute("cellW", d.w)
 		h:SetAttribute("cellH", d.h)
+		-- TURNING BETWEEN ROWS AND COLUMNS, the cells' old anchors go first.
+		-- The header adds its new one and never clears a shown child's
+		-- (SecureGroupHeaders.lua:196-207, only a hidden one at :230), so
+		-- back in rows each cell hung both after the one before and under it,
+		-- and the row went diagonal (Joe, 2026-10-24). The "point" set below
+		-- changes, so the header lays them all again at once.
+		local turned = h.laidColumns ~= nil and h.laidColumns ~= columns
+		h.laidColumns = columns
 		for i = 1, PER_GROUP do
 			local cell = h:GetAttribute("child" .. i)
 			if cell then
+				if turned then cell:ClearAllPoints() end
 				DressCell(cell)
 				LayoutCell(cell, d)
 			end
