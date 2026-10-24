@@ -175,14 +175,21 @@ end
 -- a cell
 -- ---------------------------------------------------------------------------
 
---- What a cell's role tag says. DPS says nothing; a secret answer (a unit
---  outside the group, which a raid member is not) says nothing either.
-local function RoleLetter(unit)
-	local role = UnitGroupRolesAssigned and UnitGroupRolesAssigned(unit)
-	if A.IsSecret(role) then return nil end
-	if role == "TANK" then return "T" end
-	if role == "HEALER" then return "H" end
-	return nil
+--- The role tag after the name, on its disc, and the name's room around
+--  it. `shown` is whether the glyph took (W.SetRoleGlyph's answer): DPS and
+--  a secret role show nothing, and neither does a dense cell.
+local function PlaceRole(cell, shown)
+	cell.roleDisc:SetShown(shown)
+	if not shown then cell.role:Hide() end
+	local room = math.max(10, (cell.nameRoom or 60) - (shown and cell.tagW or 0))
+	cell.name:SetWidth(room)
+	if not shown then return end
+	-- At the end of the name's text, not of its box: a short name would
+	-- leave the tag stranded out by the aura icons. Measured on a ruler
+	-- (the cell hangs off a secure header).
+	local textW = math.min(W.StringWidth(cell.name) or room, room)
+	cell.roleDisc:ClearAllPoints()
+	cell.roleDisc:SetPoint("LEFT", cell.name, "LEFT", textW + 3, 0)
 end
 
 --- The aura icons. Forever: the client's own, in a container we size and
@@ -284,11 +291,18 @@ local function DressCell(cell, still)
 	cell.name = W.Text(over, "unitName", "LEFT")
 	cell.name:SetWordWrap(false)
 
-	-- The tag in the accent at 85%: the token through W.Color, so a skin
-	-- change reaches it, and the 85% as the string's own alpha.
-	cell.role = W.Text(over, "unitName", "LEFT")
-	W.Color(cell.role, Palette.c.accent)
-	cell.role:SetAlpha(0.85)
+	-- The role, as the unit and party frames draw it (W.SetRoleGlyph): the
+	-- shield or the cross, never a letter. On a dark disc of its own,
+	-- because the cross is the friendly green and so is a full fill - a
+	-- "T" in the accent was lost on it too (Joe, 2026-10-24).
+	cell.roleDisc = over:CreateTexture(nil, "OVERLAY", nil, 4)
+	cell.roleDisc:SetTexture(Media.texture.chipDisc)
+	-- The skin's own background (nodeFill), so it is dark on every skin.
+	W.Tint(cell.roleDisc, Palette.c.nodeFill, 0.85)
+	cell.roleDisc:Hide()
+	cell.role = over:CreateTexture(nil, "OVERLAY", nil, 5)
+	cell.role:SetPoint("CENTER", cell.roleDisc, "CENTER", 0, 0)
+	cell.role:Hide()
 
 	-- A fixed ink, written by the client below 40%: handed over through
 	-- W.Color so the skin sweep leaves it alone.
@@ -348,8 +362,11 @@ local function LayoutCell(cell, d)
 
 	Media:SetFont(cell.name, "unitName", d.font)
 	cell.name._aetherSize = d.font
-	Media:SetFont(cell.role, "unitName", d.font - 2)
-	cell.role._aetherSize = d.font - 2
+	-- The tag's disc a little over the name's height, the glyph the
+	-- name's own; tagW is what it takes from the name, with its gap.
+	cell.roleDisc:SetSize(d.font + 4, d.font + 4)
+	cell.role:SetSize(d.font, d.font)
+	cell.tagW = d.font + 4 + 3
 	Media:SetFont(cell.low, "unitName", d.font)
 	cell.low._aetherSize = d.font
 
@@ -360,11 +377,9 @@ local function LayoutCell(cell, d)
 	cell.name:SetPoint("LEFT", cell.dot, "RIGHT", g.inner, 0)
 	-- Room for the name: the cell less its padding, the dot, and what sits
 	-- to the right of it. The number takes its own width when it shows; the
-	-- tag goes after the name, inside this.
+	-- tag goes after the name, inside this (PlaceRole).
 	cell.nameRoom = d.w - g.pad * 2 - g.dot - g.inner
-	cell.role:ClearAllPoints()
-	cell.role:SetPoint("LEFT", cell.name, "RIGHT", 3, 0)
-	cell.role:SetShown(not d.dense)
+	if d.dense then PlaceRole(cell, false) end
 	cell.dense = d.dense
 
 	cell.strike:ClearAllPoints()
@@ -506,12 +521,7 @@ local function UpdateName(cell)
 	if not marks then cell.mark:Hide() end
 	cell.dot:SetShown(not marked)
 
-	local letter = not cell.dense and RoleLetter(unit)
-	cell.role:SetText(letter or "")
-	-- The name truncates before the tag: room less the tag's own width,
-	-- measured on a ruler (the cell hangs off a secure header).
-	local tagW = letter and ((W.StringWidth(cell.role) or 8) + 3) or 0
-	cell.name:SetWidth(math.max(10, (cell.nameRoom or 60) - tagW))
+	PlaceRole(cell, not cell.dense and W.SetRoleGlyph(cell.role, unit))
 end
 
 local function UpdateTarget(cell)
@@ -1273,10 +1283,8 @@ local function PaintSample(cell, s, name, d, view)
 	local ink = Palette:ClassColorOf(s.class) or Palette.c.textDim
 	cell.dot:SetVertexColor(ink[1], ink[2], ink[3], 1)
 	cell.name:SetText(name)
-	local letter = not d.dense and (s.tank and "T" or s.healer and "H") or nil
-	cell.role:SetText(letter or "")
-	local tagW = letter and ((W.StringWidth(cell.role) or 8) + 3) or 0
-	cell.name:SetWidth(math.max(10, (cell.nameRoom or 60) - tagW))
+	local role = s.tank and "TANK" or s.healer and "HEALER" or nil
+	PlaceRole(cell, not d.dense and W.ShowRoleGlyph(cell.role, role))
 	local marked = view.marks and s.mark and W.SetMarkIcon(cell.mark, s.mark)
 	cell.mark:SetShown(marked and true or false)
 	cell.dot:SetShown(not marked)

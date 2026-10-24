@@ -589,8 +589,8 @@ end
 --  role at all, so an arrow for it marks everybody and says nothing about any
 --  of them. Tank and healer are the two that answer a question you ask.
 --
---  ONE OF THESE for the party capsules and the player's and target's, so a
---  shield means the same thing wherever it turns up.
+--  ONE OF THESE for the party capsules, the player's and target's and the
+--  raid cells, so a shield means the same thing wherever it turns up.
 local ROLE_GLYPH = { TANK = "tank", HEALER = "healer" }
 
 function W.SetRoleGlyph(tex, unit)
@@ -602,6 +602,13 @@ function W.SetRoleGlyph(tex, unit)
 		tex:Hide()
 		return false
 	end
+	return W.ShowRoleGlyph(tex, role)
+end
+
+--- The glyph for a role given outright: the Options preview's made-up
+--  members have a role and no unit.
+function W.ShowRoleGlyph(tex, role)
+	if not tex then return false end
 	local glyph = ROLE_GLYPH[role or "NONE"]
 	if glyph and A.Media:SetIcon(tex, glyph) then
 		local c = A.Palette.c

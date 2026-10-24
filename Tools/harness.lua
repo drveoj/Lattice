@@ -36455,9 +36455,20 @@ section("raid frames: the weave", function()
 		and A1.fillMask:GetTexture() == A.Media.texture.cellMask[112],
 		"the fill is masked round to its cell, by its density's own mask ("
 		.. tostring(A1.fillMask and A1.fillMask:GetTexture()) .. ")")
-	check(A1.name:GetText() == "Member1" and A1.role:GetText() == "T",
-		"a cell carries the name and, for a tank, the T tag")
-	check(RF.headers[1]:GetAttribute("child2").role:GetText() == "",
+	-- JOE, 2026-10-24: a "T" in the accent, lost on the green fill, where
+	-- every other frame shows a shield. The same glyph, on a dark disc.
+	local _, tl, tr, tt, tb = A.Media:Icon("tank")
+	local rc = A1.role.__texcoord or {}
+	check(A1.name:GetText() == "Member1" and A1.role:IsShown()
+		and rc[1] == tl and rc[2] == tr and rc[3] == tt and rc[4] == tb,
+		"a cell carries the name and, for a tank, the shield the unit and party frames use")
+	local dr, dg, db, da = A1.roleDisc:GetVertexColor()
+	local bg = A.Palette.c.nodeFill
+	check(A1.roleDisc:IsShown() and dr == bg[1] and dg == bg[2] and db == bg[3]
+		and math.abs(da - 0.85) < 1e-6,
+		"on a dark disc, so it stands out on any fill")
+	local A2 = RF.headers[1]:GetAttribute("child2")
+	check(not A2.role:IsShown() and not A2.roleDisc:IsShown(),
 		"and DPS carry no tag")
 
 	-- PHASE 2, THE GROUP BOND (Raid.dc.html 13b-13d). Three rows at 20-man
