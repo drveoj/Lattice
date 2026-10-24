@@ -1689,10 +1689,8 @@ end
 -- moving between map and pages
 -- ---------------------------------------------------------------------------
 
-local function Ease(p)
-	if p <= 0 then return 0 elseif p >= 1 then return 1 end
-	return 1 - (1 - p) * (1 - p) * (1 - p)
-end
+-- The shared curve (W.Ease): the raid's transitions move by it too.
+local Ease = W.Ease
 
 local function Clamp01(p) return math.max(0, math.min(1, p)) end
 

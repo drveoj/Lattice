@@ -118,6 +118,11 @@ local PIN_TO_WEAVE = 16
 -- columns side by side from the bond (Raid.dc.html 13d).
 local COL_NUMBER_H, COL_NUMBER_GAP = 12, 4
 
+-- The transitions' times (README, "Transitions"): a move, the stagger
+-- between capsules in a fold, and the threat glow in and out.
+local MOVE, STAGGER = 0.2, 0.02
+local GLOW_IN, GLOW_OUT = 0.12, 0.2
+
 local ICON = 12   -- an aura, the client's own icon
 local ICONS = 3   -- in all, whatever they are
 
@@ -380,17 +385,35 @@ function RF:UpdateEdge(cell)
 
 	if colour then
 		cell:SetEdgeColor(colour)
-		cell:SetRimGlow({ colour[1], colour[2], colour[3], 0.6 })
 	elseif cell.hovered or cell.copied then
 		-- Its own hover, or its pin's: a pin copies its member, and hovering
 		-- the pin lights the cell it copies (README, "Pin").
 		local a = c.accent
 		cell:SetEdgeColor({ a[1], a[2], a[3], 0.6 })
-		cell:SetRimGlow(nil)
 	else
 		cell:ApplySkin("glass", "glassEdge")
-		cell:SetRimGlow(nil)
 	end
+	self:GlowTo(cell, colour)
+end
+
+--- The threat glow, faded in over 120 ms and out over 200 (README,
+--  "Transitions"), in the colour it came in with.
+function RF:GlowTo(cell, colour)
+	local want = colour and 0.6 or 0
+	if colour then cell._glowColour = colour end
+	if cell._glowWant == want then return end
+	cell._glowWant = want
+	cell._glowKey = cell._glowKey or {}
+	local from, c = cell._glowA or 0, cell._glowColour
+	W.Tween(cell._glowKey, want > from and GLOW_IN or GLOW_OUT, function(p)
+		local a = from + (want - from) * p
+		cell._glowA = a
+		if a <= 0.001 or not c then
+			cell:SetRimGlow(nil)
+		else
+			cell:SetRimGlow({ c[1], c[2], c[3], a })
+		end
+	end)
 end
 
 local function UpdateHealth(cell)
@@ -641,13 +664,17 @@ end
 --- Pin or unpin someone by name, kept per character. The row is laid out
 --  again out of combat; in a fight that waits, and says so.
 function RF:SetPinned(name, on)
+	local fight = InCombatLockdown()
+	-- Where they are now, for the move to where they go.
+	local from = not fight and self:MemberRect(name, not on)
 	local names = PinStore()
 	for i = #names, 1, -1 do
 		if names[i] == name then table.remove(names, i) end
 	end
 	if on then names[#names + 1] = name end
-	if InCombatLockdown() then A:Print(L.raid.after_combat) end
+	if fight then A:Print(L.raid.after_combat) end
 	self:Layout()
+	if from then self:FlyPin(name, on, from) end
 end
 
 --- What the row's label says: PINNED, then what pins it.
@@ -734,6 +761,155 @@ local function ForPin(unit)
 	for _, p in ipairs(RF:Pins()) do
 		if p.unit == unit then UpdatePin(p) end
 	end
+end
+
+-- ---------------------------------------------------------------------------
+-- transitions (README, "Transitions")
+--
+-- WHAT MOVES IS NEVER THE REAL FRAME. Cells, pins and party capsules are
+-- secure, and each is placed by its header or its stack: one slid by hand
+-- fights whatever owns its point. A GHOST - glass with the member's name -
+-- flies from where they were to where they now are, over the real one kept
+-- out of sight until it lands (the build plan's route). Out of combat only,
+-- as every move here is; reduced motion lands it at once (W.Tween).
+-- ---------------------------------------------------------------------------
+
+local ghosts = {}
+
+local function Rect(f)
+	local P = A.Movers.PointAt
+	local l, b = P(f, "BOTTOMLEFT")
+	local r, t = P(f, "TOPRIGHT")
+	if not (l and r) then return nil end
+	return { l = l, b = b, w = r - l, h = t - b }
+end
+RF.Rect = Rect
+
+local function Ghost(i)
+	local g = ghosts[i]
+	if g then return g end
+	g = Glass.CreatePanel(UIParent, { corner = 8, fill = "glass", edge = "glassEdge" })
+	g:SetFrameStrata("HIGH")
+	g:EnableMouse(false)
+	g.name = W.Text(g, "unitName", "LEFT")
+	g.name:SetPoint("LEFT", g, "LEFT", 10, 0)
+	g.name:SetWordWrap(false)
+	g:Hide()
+	ghosts[i] = g
+	return g
+end
+RF.ghosts = ghosts
+
+--- Fly ghost `i` from one rect to another with `name` on it, starting after
+--  `delay`, its corner going from round as a capsule's to the cell's.
+--  `real` is the frame it lands on, kept out of sight till then; `settle`
+--  puts that frame's own look back (its range fade, its offline dim).
+function RF:Fly(i, from, to, name, delay, real, settle)
+	if not (from and to) then return end
+	local g = Ghost(i)
+	g.name:SetText(name or "")
+	if real then real:SetAlpha(0) end
+	-- At the profile's scale, as every frame is; the rects are in UIParent's
+	-- units, so each is given in the ghost's own.
+	local s = A.db.profile.scale or 1
+	g:SetScale(s)
+	local function pose(p)
+		local l = (from.l + (to.l - from.l) * p) / s
+		local b = (from.b + (to.b - from.b) * p) / s
+		local w = (from.w + (to.w - from.w) * p) / s
+		local h = (from.h + (to.h - from.h) * p) / s
+		g:ClearAllPoints()
+		g:SetPoint("BOTTOMLEFT", UIParent, "BOTTOMLEFT", l, b)
+		g:SetSize(math.max(1, w), math.max(1, h))
+		Glass.SetPanelCorner(g, h * (0.5 - 0.25 * p))
+		-- Lands, then gives way to the real frame under it.
+		g:SetAlpha(p < 0.75 and 1 or (1 - (p - 0.75) / 0.25))
+		g:Show()
+	end
+	-- At the start at once, so nothing blinks where the member was - and a
+	-- capsule's ghost waiting its stagger holds the place it left.
+	pose(0)
+	W.Tween(g, MOVE, pose, function()
+		g:Hide()
+		if real then
+			real:SetAlpha(1)
+			if settle then settle(real) end
+		end
+	end, delay)
+end
+
+--- The cell showing `name`, the live one.
+function RF:CellFor(name)
+	for _, cell in ipairs(self:Cells()) do
+		if cell.name:GetText() == name then return cell end
+	end
+end
+
+function RF:PinFor(name)
+	for _, pin in ipairs(self:Pins()) do
+		if pin.unit and pin:IsShown() and pin.name:GetText() == name then return pin end
+	end
+end
+
+local function SettleCell(cell) W.RangeAlpha(cell, cell.unit, RF:FadeTo()) end
+local function SettlePin(pin) UpdatePin(pin) end
+
+--- Where `name` is now: their pin, or their cell.
+function RF:MemberRect(name, asPin)
+	local f = asPin and self:PinFor(name) or (not asPin and self:CellFor(name))
+	return f and Rect(f)
+end
+
+--- PIN AND UNPIN (README): 200 ms between the cell and the capsule. `from`
+--  was taken before the row was laid out again.
+function RF:FlyPin(name, on, from)
+	local dst = on and self:PinFor(name) or self:CellFor(name)
+	if from and dst then
+		self:Fly(1, from, Rect(dst), name, 0, dst, on and SettlePin or SettleCell)
+	end
+end
+
+--- THE FOLD: at six or more the party's capsules fold into the weave - each
+--  to its cell, 20 ms apart - and back to their capsules at five or fewer
+--  (README). The capsules and the weave swap at once, by their own state
+--  drivers; the ghosts carry the eye across.
+function RF:Fold(intoRaid)
+	if InCombatLockdown() then return end
+	local PF = A:GetModule("partyframes")
+	if not (PF and PF.enabled and PF.frames) then return end
+	local i = 0
+	if intoRaid then
+		for _, f in ipairs(PF.frames) do
+			local name = f.name and f.name:GetText()
+			local cell = name and name ~= "" and self:CellFor(name)
+			if cell then
+				i = i + 1
+				self:Fly(i, Rect(f), Rect(cell), name, (i - 1) * STAGGER, cell, SettleCell)
+			end
+		end
+	else
+		local was = self.lastCells or {}
+		for _, f in ipairs(PF.frames) do
+			local name = f.unit and UnitExists(f.unit) and f.name and f.name:GetText()
+			local from = name and was[name]
+			if from then
+				i = i + 1
+				self:Fly(i, from, Rect(f), name, (i - 1) * STAGGER, f, nil)
+			end
+		end
+	end
+	self.lastFold = i
+end
+
+--- Where every named cell was at the last layout, for the fold back: by the
+--  time the roster says the raid is over, the header has already let go.
+function RF:RememberCells()
+	local was = {}
+	for _, cell in ipairs(self:Cells()) do
+		local name = cell.name:GetText()
+		if name and name ~= "" then was[name] = Rect(cell) end
+	end
+	self.lastCells = was
 end
 
 -- ---------------------------------------------------------------------------
@@ -1059,6 +1235,7 @@ function RF:Layout()
 
 	for _, cell in ipairs(self:Cells()) do UpdateCell(cell) end
 	for _, pin in ipairs(self:Pins()) do UpdatePin(pin) end
+	if IsInRaid and IsInRaid() then self:RememberCells() end
 end
 
 -- ---------------------------------------------------------------------------
@@ -1138,7 +1315,15 @@ function RF:RegisterEvents()
 
 	local function sweep()
 		RF:HideBlizzard()
+		local raid = IsInRaid and IsInRaid() or false
+		local was = RF.wasRaid
+		RF.wasRaid = raid
 		RF:Layout()
+		-- THE FOLD, when the group becomes a raid or a party again. A frame
+		-- on, so the headers have dealt their members out first.
+		if was ~= nil and raid ~= was and not InCombatLockdown() and C_Timer then
+			C_Timer.After(0, function() RF:Fold(raid) end)
+		end
 	end
 	A:RegisterEvent(self, "GROUP_ROSTER_UPDATE",   sweep)
 	A:RegisterEvent(self, "PLAYER_ROLES_ASSIGNED", sweep)

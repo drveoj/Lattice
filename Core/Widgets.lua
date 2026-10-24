@@ -55,6 +55,72 @@ end
 W.SetGradient = SetGradient
 
 -- ---------------------------------------------------------------------------
+-- tweens
+--
+-- ONE FRAME-RATE DRIVER for the short animations. The shared ticker runs at
+-- 10 Hz, which is two steps across a 200 ms move. A tween is a function of
+-- eased progress, 0 to 1, run each frame until it is done; with General's
+-- reduced motion on, it goes straight to 1. Keyed, so a second tween under the
+-- same key replaces the first rather than fighting it.
+-- ---------------------------------------------------------------------------
+
+--- Ease out, cubic: quick to start, settling at the end. (The options window's
+--  curve, moved here so there is one.)
+function W.Ease(p)
+	if p <= 0 then return 0 elseif p >= 1 then return 1 end
+	return 1 - (1 - p) * (1 - p) * (1 - p)
+end
+
+local tweens, tweenDriver = {}, nil
+local tweenKeys = {}
+
+local function StepTweens(self, elapsed)
+	-- Over a snapshot of the keys: a tween's last step may start another.
+	local n = 0
+	for key in pairs(tweens) do
+		n = n + 1
+		tweenKeys[n] = key
+	end
+	for i = 1, n do
+		local key = tweenKeys[i]
+		tweenKeys[i] = nil
+		local t = tweens[key]
+		if t then
+			t.t = t.t + (elapsed or 0)
+			if t.t >= 0 then
+				local p = math.min(1, t.t / t.d)
+				local ok, err = pcall(t.fn, W.Ease(p))
+				if not ok then A.lastFailure = "tween: " .. tostring(err) end
+				if p >= 1 or not ok then
+					if tweens[key] == t then tweens[key] = nil end
+					if t.done then pcall(t.done) end
+				end
+			end
+		end
+	end
+	if not next(tweens) then self:SetScript("OnUpdate", nil) end
+end
+
+--- Run fn(eased progress) each frame over `duration` seconds, after `delay`,
+--  under `key`; onDone once it reaches 1.
+function W.Tween(key, duration, fn, onDone, delay)
+	local reduced = A.db and A.db.profile and A.db.profile.reducedMotion
+	if reduced then
+		tweens[key] = nil
+		fn(1)
+		if onDone then onDone() end
+		return
+	end
+	tweens[key] = { t = -(delay or 0), d = math.max(0.001, duration), fn = fn, done = onDone }
+	if not tweenDriver then tweenDriver = CreateFrame("Frame") end
+	tweenDriver:SetScript("OnUpdate", StepTweens)
+end
+
+function W.StopTween(key) tweens[key] = nil end
+function W.Tweening(key) return tweens[key] ~= nil end
+W.__tweenDriver = function() return tweenDriver end
+
+-- ---------------------------------------------------------------------------
 -- masks
 --
 -- Classic Era does have MaskTexture, but guard anyway: an addon that hard-errors

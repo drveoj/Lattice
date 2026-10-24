@@ -36706,6 +36706,86 @@ section("raid frames: the weave", function()
 		keepSet[1], keepSet[2], keepSet[3], keepSet[4], keepSet[5]
 	RF:OnConfigChanged()
 
+	-- PHASE 5, THE TRANSITIONS (README). A ghost flies; the real frame waits.
+	local Wd = A.Widgets
+	local function step(dt)
+		local d = Wd.__tweenDriver()
+		local fn = d and d:GetScript("OnUpdate")
+		if fn then fn(d, dt) end
+	end
+	local function settle() for _ = 1, 10 do step(0.05) end end
+	settle()
+
+	-- THE THREAT GLOW comes in over 120 ms and goes over 200.
+	local plainThreatG = UnitThreatSituation
+	UnitThreatSituation = function(u) return u == "raid1" and 1 or 0 end
+	fire("UNIT_THREAT_SITUATION_UPDATE", "raid1")
+	step(0.06)
+	local mid = A1._glowA
+	step(0.1)
+	check(mid and mid > 0 and mid < 0.6 and math.abs(A1._glowA - 0.6) < 1e-6,
+		"the threat glow fades in rather than snapping on (" .. tostring(mid) .. ", then " .. tostring(A1._glowA) .. ")")
+	UnitThreatSituation = plainThreatG
+	fire("UNIT_THREAT_SITUATION_UPDATE", "raid1")
+	step(0.1)
+	local going = A1._glowA
+	step(0.15)
+	check(going > 0 and going < 0.6 and A1._glowA <= 0.001,
+		"and fades out when the threat goes (" .. tostring(going) .. ")")
+
+	-- PIN: from the cell to the pin row; the pin waits unseen till it lands.
+	-- At a scale that is not 1, so the ghost's units are tested.
+	local keepScaleG = A.db.profile.scale
+	A.db.profile.scale = 0.71
+	RF:OnConfigChanged()
+	local cell3 = RF:CellFor("Member3")
+	local from3 = RF.Rect(cell3)
+	RF:SetPinned("Member3", true)
+	local G1 = RF.ghosts[1]
+	local pin3 = RF:PinFor("Member3")
+	local _, _, _, gx0 = G1:GetPoint(1)
+	local gs = G1:GetScale()
+	check(G1:IsShown() and pin3 and pin3:GetAlpha() == 0 and math.abs(gx0 * gs - from3.l) < 0.5
+		and math.abs(gs - (A.db.profile.scale or 1)) < 1e-6,
+		"pinning sends a ghost from the cell, at the profile's scale, the pin waiting unseen")
+	settle()
+	check(not G1:IsShown() and pin3:GetAlpha() == 1, "and when it lands the pin is there")
+	RF:SetPinned("Member3", false)
+	settle()
+	check(cell3:GetAlpha() > 0 and not G1:IsShown(), "and unpinning sends it back to its cell")
+	A.db.profile.scale = keepScaleG
+	RF:OnConfigChanged()
+
+	-- THE FOLD: a party capsule to its member's cell, and back.
+	local PFm = A:GetModule("partyframes")
+	local cap = PFm.frames[1]
+	local keepName = cap.name:GetText()
+	cap.name:SetText("Member2")
+	local cell2 = RF:CellFor("Member2")
+	RF:Fold(true)
+	check(RF.lastFold == 1 and G1:IsShown() and cell2:GetAlpha() == 0,
+		"into a raid, each capsule folds to its member's cell (" .. tostring(RF.lastFold) .. ")")
+	settle()
+	check(not G1:IsShown() and cell2:GetAlpha() > 0, "and the cell is there when it lands")
+	RF:RememberCells()
+	local keepUnit = _G.__units[cap.unit]
+	_G.__units[cap.unit] = { exists = true, name = "Member2" }
+	RF:Fold(false)
+	check(RF.lastFold == 1 and G1:IsShown() and cap:GetAlpha() == 0,
+		"and back out of one, from where the cell was to the capsule")
+	settle()
+	check(cap:GetAlpha() == 1, "the capsule there when it lands")
+	_G.__units[cap.unit] = keepUnit
+	cap.name:SetText(keepName)
+
+	-- REDUCED MOTION: nothing flies.
+	A.db.profile.reducedMotion = true
+	RF:SetPinned("Member3", true)
+	check(not G1:IsShown() and RF:PinFor("Member3"):GetAlpha() == 1,
+		"with reduced motion the pin is simply there")
+	RF:SetPinned("Member3", false)
+	A.db.profile.reducedMotion = false
+
 	-- HEALTH: the fill's colour and the low number, by the helpers.
 	_G.__units.raid1.hp = 30
 	fire("UNIT_HEALTH", "raid1")
