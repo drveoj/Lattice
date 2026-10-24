@@ -1009,6 +1009,11 @@ local function BuildBar(barCfg)
 		-- The strand pad's own 14; the Theme's corner scales it with the rest.
 		corner = 14,
 		shadow = A.db.profile.glass.shadow,
+		-- Every bar in the frosted art, whatever its scale, so a bar at 1.0
+		-- and one at 0.85 wear the same rim, the windows' hairline (Core/Glass.lua,
+		-- _PickPanelArt). The small art held instead was "way thicker than
+		-- anything else" (Joe, 2026-10-24).
+		art = "big",
 	})
 
 	-- A secure handler frame: the owner of the override bindings, of the pet

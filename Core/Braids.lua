@@ -190,8 +190,9 @@ local function Pad(root)
 	local p = Braids.pads[root]
 	if p then return p end
 	-- 14, the strand pad's own; the Theme's corner scales it with the rest.
+	-- The frosted art, as every bar's dock (Modules/ActionBars.lua).
 	p = A.Glass.CreatePanel(UIParent, { corner = 14,
-		shadow = A.db.profile.glass.shadow })
+		shadow = A.db.profile.glass.shadow, art = "big" })
 	p:EnableMouse(false)
 	p:Hide()
 	-- The HIGHEST energy among its strands (strands brief), so the block never

@@ -600,6 +600,8 @@ function Glass.MakePanel(f, opts)
 	f._edge = Build9(f, Media.texture.panelEdge, "BORDER", 0)
 	ApplyTexCoords(f._edge, Media.slice.panel, Media.textureSize.panel)
 	f._art = "big"
+	-- `art` holds it to one art whatever its size (see _PickPanelArt).
+	f._artPin = opts.art
 
 	--- THE CORNER, SNAPPED TO WHOLE PHYSICAL PIXELS.
 	--
@@ -678,8 +680,17 @@ end
 --- Which art a panel wears, from its corner as drawn. Swapped with the
 --  half-texel inset, which is computed from the source size - the small art
 --  sampled with the big one's inset would pull a neighbour in at every seam.
+--
+--  A FAMILY THAT SITS SIDE BY SIDE can hold one art (`opts.art`): the action
+--  bars come in two default scales, 1.0 and 0.85, and at Joe's settings the
+--  line ran between them - bars 1 and 2 wore the frosted art's hairline and
+--  the bars next to them the small art's even rim (2026-10-24). They hold
+--  the frosted art, the windows' hairline: the small art held instead was
+--  "way thicker than anything else", and a rim grown for everything was
+--  tried and reverted ("mushy").
 function Surface:_PickPanelArt(c)
-	local want = (PhysicalOf(self, c) < Glass.PANEL_ART_MIN) and "small" or "big"
+	local want = self._artPin
+		or ((PhysicalOf(self, c) < Glass.PANEL_ART_MIN) and "small" or "big")
 	if want == self._art then return end
 	self._art = want
 	local small = (want == "small")

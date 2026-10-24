@@ -20834,6 +20834,29 @@ do
 		"one pad covers both" .. T.say(p and p.l, d1.l, p and p.r, d2.r))
 	check(T.bar("1").dock._edgeHidden and T.bar("2").dock._edgeHidden and B:Bare("bar1"),
 		"and both docks are drawn bare inside it")
+	-- ONE ART FOR EVERY BAR AND PAD (Joe, 2026-10-24): bars 1 and 2 at scale
+	-- 1.0 crossed onto the frosted art and its hairline while the bars at 0.85
+	-- beside them kept the small art's rim. All of them hold the frosted art,
+	-- the windows' hairline; the small art held was "way thicker".
+	do
+		local Mt, odd = A.Media.texture, nil
+		for _, f in ipairs({ T.bar("1").dock, T.bar("2").dock, T.bar("3").dock, pad }) do
+			if f._artPin ~= "big" or f._art ~= "big" or f._edge[1]:GetTexture() ~= Mt.panelEdge then
+				odd = odd or tostring(f._art)
+			end
+		end
+		check(not odd, "every bar's dock and the braid's pad hold the frosted art, whatever"
+			.. " their scale (" .. tostring(odd) .. ")")
+		-- Held, not merely picked: a panel this small would take the small art.
+		local tiny = A.Glass.CreatePanel(UIParent, { corner = 3, art = "big" })
+		local loose = A.Glass.CreatePanel(UIParent, { corner = 3 })
+		tiny:SetSize(40, 20) loose:SetSize(40, 20)
+		check(loose._art == "small" and tiny._art == "big"
+			and tiny._edge[1]:GetTexture() == Mt.panelEdge,
+			"and the art held wins over the size (" .. tostring(loose._art) .. ", "
+			.. tostring(tiny._art) .. ")")
+		tiny:Hide() loose:Hide()
+	end
 
 	-- 2. The pad and the member follow the host.
 	T.bar("1").dock:ClearAllPoints()
