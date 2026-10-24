@@ -25,11 +25,6 @@ Media.texture = {
 	-- frosted surfaces
 	panel       = TEX .. "Glass-Panel",       -- 256x256, 9-slice, corner 64 (0.25)
 	panelEdge   = TEX .. "Glass-Panel-Edge",
-	-- THE RIM A PANEL WEARS over the frosted fill: the small art's even rim at
-	-- this size, so a rim is the same share of its corner on every panel and a
-	-- bigger one is never drawn thinner (Joe, 2026-10-24). panelEdge, top-lit
-	-- and under half as deep, is kept for the shared-media "Rim" border only.
-	panelEvenEdge = TEX .. "Glass-Panel-Even-Edge",
 	-- The same rounded shape with FLAT alpha. Glass-Panel's alpha carries the
 	-- top-light falloff as well as the shape, so a tint on it tops out at 89%
 	-- and a reading surface asked for solid could not get there. This goes

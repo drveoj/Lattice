@@ -18907,20 +18907,6 @@ section("commands and toggles: repainted on a skin change by nobody but themselv
 	local OWa, fa = OpenMap()
 	check(fa._art == "big" and fa._fill[1]:GetTexture() == Mt.panel,
 		"and a window keeps the frosted art")
-	-- BUT NOT A THINNER RIM (Joe, 2026-10-24): the frosted art's own rim was
-	-- under half the small one's share of the corner, so a panel just over the
-	-- line - action bars 1 and 2 at scale 1.0 - drew a thinner border than the
-	-- bars at 0.85 beside it. Over the frost, the small art's rim at this size.
-	check(fa._edge[1]:GetTexture() == Mt.panelEvenEdge
-		and fa._edge[9]:GetTexture() == Mt.panelEvenEdge,
-		"with the even rim over its frost, the same share of the corner as a"
-		.. " small panel's, never the thinner top-lit one ("
-		.. tostring(fa._edge[1]:GetTexture()) .. ")")
-	-- And a panel built big, before any art is picked, starts with it too.
-	local fresh = A.Glass.CreatePanel(UIParent, { corner = 14 })
-	check(fresh._edge[1]:GetTexture() == Mt.panelEvenEdge,
-		"a new panel starts with the even rim (" .. tostring(fresh._edge[1]:GetTexture()) .. ")")
-	fresh:Hide()
 	A.Options:Close()
 	-- A COLD START draws nothing for a string written before its font loaded,
 	-- and a label written once at build time was never drawn again: Share was
