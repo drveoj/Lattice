@@ -1477,11 +1477,13 @@ handlers.party = function(arg)
 	end
 
 	if arg ~= "diag" then
-		if not PF or not PF.enabled then
-			A:Print(L.cmd.party.party_frames_switched_off)
+		-- The controls are the Toolbox's (Modules/GroupTools.lua).
+		local GT = A:GetModule("grouptools")
+		if not (GT and GT.Ours()) then
+			A:Print(L.cmd.party.controls_need_toolbox)
 			return
 		end
-		local open = PF:TogglePanel()
+		local open = GT:TogglePanel()
 		A:Print(A.F(L.cmd.party.party_controls_s_s,
 			open and A.Good(L.common.open) or A.Dim(L.cmd.party.closed),
 			A.Hi("/lattice party diag")))

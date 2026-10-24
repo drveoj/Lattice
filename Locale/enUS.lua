@@ -232,7 +232,8 @@ L["cmd.party.party_controls_s_s"] = "party controls %s  ·  %s for the report"
 L["cmd.party.party_frames_back_dock"] =
 	"party frames back in their default place. Drag them again to place "
 		.. "them where you want."
-L["cmd.party.party_frames_switched_off"] = "party frames are switched off."
+L["cmd.party.controls_need_toolbox"] =
+	"the group controls live on the Toolbox, which is switched off."
 
 L["cmd.party_diag.party_module"] = "no party module"
 

@@ -119,6 +119,10 @@ end
 function RF:ShowBlizzard()
 	local f = _G.CompactRaidFrameContainer
 	if f and A.homes[f] and A:Unbanish(f) then self.hideReport = "shown" end
+	-- Not back into a raid tab the Toolbox has put away: their home on Era
+	-- (Blizzard_CompactRaidFrameManager.lua:23), and a hidden parent.
+	local p = f and f:GetParent()
+	if p and A.banished[p] and not InCombatLockdown() then f:SetParent(UIParent) end
 end
 
 -- ---------------------------------------------------------------------------

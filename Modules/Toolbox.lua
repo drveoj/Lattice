@@ -586,6 +586,14 @@ function TB:OnEnable()
 		TB:RefreshAddons()
 		TB:LayoutPins()
 	end)
+	self:SyncGroupTools()
+end
+
+--- The group controls are ours while the Toolbox is on, and Blizzard's raid
+--  tab comes back when it is not (Modules/GroupTools.lua).
+function TB:SyncGroupTools()
+	local GT = A:GetModule("grouptools")
+	if GT and GT.enabled then GT:Sync() end
 end
 
 function TB:OnDisable()
@@ -597,6 +605,7 @@ function TB:OnDisable()
 		self.root:Hide()
 	end
 	Trunk():SetRoot(nil)
+	self:SyncGroupTools()
 end
 
 function TB:OnSkinChanged()

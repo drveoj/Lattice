@@ -2592,15 +2592,17 @@ CompactPartyFrame = CreateFrame("Frame", "CompactPartyFrame", UIParent)
 CompactPartyFrame.__protected = true
 
 -- The tab down the left-hand side and the Party Members flyout behind it -
--- the marker grid, Ready Check, Countdown, Convert to Raid. Our controls
--- panel is what replaces it.
+-- the marker grid, Ready Check, Countdown, Convert to Raid. The Toolbox's
+-- group controls are what replace it.
 CompactRaidFrameManager = CreateFrame("Frame", "CompactRaidFrameManager", UIParent)
 CompactRaidFrameManager.__protected = true
--- The raid frames themselves: parented to UIParent on Forever, to the manager
--- on Era (Classic/Blizzard_CompactRaidFrameManager.lua:23) - though Joe saw
--- them on screen on both (2026-10-23), so the weave banishes this one too.
+-- The raid frames themselves. The toc loads the [Family] manager: Era's is
+-- Classic, which ADOPTS them at load (Classic/Blizzard_CompactRaidFrameManager
+-- .lua:23), so a tab put away took them with it (Joe, 2026-10-24). Forever's
+-- leaves them under UIParent - Joe saw them with the tab hidden (2026-10-23).
 CompactRaidFrameContainer = CreateFrame("Frame", "CompactRaidFrameContainer", UIParent)
 CompactRaidFrameContainer.__protected = true
+if _G.__flavour ~= "camelot" then CompactRaidFrameContainer:SetParent(CompactRaidFrameManager) end
 
 _G.__unitWatched = {}
 function RegisterUnitWatch(f)
@@ -7941,7 +7943,7 @@ local FILES = {
 	"Core/Trunk.lua", "Core/Mail.lua", "Core/Nav.lua", "Core/Launchers.lua",
 	"Core/Commands.lua", "Core/Options.lua", "Core/OptionsControls.lua", "Core/OptionsWindow.lua",
 	"Modules/UnitFrames.lua", "Modules/Resources.lua", "Modules/PartyFrames.lua",
-	"Modules/RaidFrames.lua",
+	"Modules/RaidFrames.lua", "Modules/GroupTools.lua",
 	"Modules/ActionBars.lua", "Modules/Auras.lua",
 	"Modules/QuestTracker.lua", "Modules/QuestLog.lua", "Modules/Bags.lua",
 	"Modules/Minimap.lua", "Modules/XPBar.lua",
@@ -12470,8 +12472,8 @@ section("party: four capsules in fixed slots", function()
 	-- exactly how the first version of this shipped - it went looking for
 	-- PartyMemberFrame1..4, which are pooled and nameless here, found nothing
 	-- four times and reported success.
-	for _, name in ipairs({ "PartyFrame", "CompactPartyFrame",
-		"CompactRaidFrameManager" }) do
+	-- Not the raid tab: that is the Toolbox's to put away (group tools, below).
+	for _, name in ipairs({ "PartyFrame", "CompactPartyFrame" }) do
 		check(PF.hideReport[name] == "hidden",
 			name .. " is hidden (" .. tostring(PF.hideReport[name]) .. ")")
 		check(_G[name]:GetParent() ~= UIParent,
@@ -12497,24 +12499,118 @@ section("party: four capsules in fixed slots", function()
 	check(not PartyFrame:IsVisible(),
 		"the moment the fight ends, it goes")
 
-	-- PARKED, NOT DEAFENED: the raid manager keeps its events, which are what
-	-- show Blizzard's raid frames on Era (Joe, 2026-10-24: with our raid frames
-	-- off, Blizzard's stayed hidden).
-	local mgr = CompactRaidFrameManager
-	mgr:RegisterEvent("GROUP_ROSTER_UPDATE")
-	PF:HideBlizzard()
-	check(mgr:IsEventRegistered("GROUP_ROSTER_UPDATE") and A.homes[mgr] == UIParent,
-		"the raid manager is parked with its events, and its home remembered")
-
-	-- AND THE SETTING TURNED OFF GIVES THEM BACK, no reload.
+	-- AND THE SETTING TURNED OFF GIVES THEM BACK, no reload (Joe, 2026-10-24).
 	local pc = A.Config:Module("partyframes")
 	pc.hideBlizzard = false
 	PF:OnConfigChanged()
-	check(PartyFrame:IsVisible() and mgr:GetParent() == UIParent,
+	check(PartyFrame:IsVisible() and PartyFrame:GetParent() == UIParent,
 		"hiding Blizzard's party frames turned off brings them back at once")
 	pc.hideBlizzard = true
 	PF:OnConfigChanged()
 	check(not PartyFrame:IsVisible(), "and on again puts them away")
+	A:SetModuleEnabled("partyframes", false)
+	check(PartyFrame:IsVisible(), "our party frames turned off brings Blizzard's back")
+	A:SetModuleEnabled("partyframes", true)
+	check(not PartyFrame:IsVisible(), "and on again puts them away")
+end)
+
+section("group tools: the Toolbox runs the group, Blizzard's tab otherwise", function()
+	-- JOE, 2026-10-24: "Toolbox-owned management". The controls were the party
+	-- frames module's, so turning those frames off left no way to run a group:
+	-- ours gone, Blizzard's tab still put away.
+	local GT, TBm = A:GetModule("grouptools"), A:GetModule("toolbox")
+	local mgr, crf = CompactRaidFrameManager, CompactRaidFrameContainer
+	local t = A.Trunk:Get("toolbox")
+	check(GT.enabled and TBm.enabled and GT.Ours(), "the controls are on, with the Toolbox")
+
+	-- PARKED, NOT DEAFENED: its events are what show Blizzard's raid frames.
+	mgr:RegisterEvent("GROUP_ROSTER_UPDATE")
+	GT:Sync()
+	check(not mgr:IsVisible() and mgr:IsEventRegistered("GROUP_ROSTER_UPDATE")
+		and A.homes[mgr] == UIParent,
+		"Blizzard's raid tab is put away with its events, its home remembered ("
+		.. tostring(GT.hideReport) .. ")")
+	-- And never the raid frames with it. A FRESH ERA LOGIN with our raid frames
+	-- off: the tab has adopted them (Classic manager :23), and it is put away.
+	A:SetModuleEnabled("raidframes", false)
+	A:Unbanish(mgr)
+	if _G.__flavour ~= "camelot" then crf:SetParent(mgr) end
+	GT:Sync()
+	crf:Show()   -- as the tab, awake, does in a raid
+	check(crf:GetParent() ~= mgr and crf:IsVisible(),
+		"the raid tab put away, Blizzard's raid frames are not taken with it")
+	-- And the other order, a login with ours on: the weave parks them while the
+	-- tab still holds them, so their home is the tab - then the tab is put
+	-- away, and ours switched off must not send them back under it.
+	A:Unbanish(mgr)
+	if _G.__flavour ~= "camelot" then crf:SetParent(mgr) end
+	A:SetModuleEnabled("raidframes", true)
+	GT:Sync()
+	A:SetModuleEnabled("raidframes", false)
+	crf:Show()
+	check(crf:IsVisible(), "nor when our raid frames are switched off after")
+	A:SetModuleEnabled("raidframes", true)
+
+	-- PARTY FRAMES OFF: the controls stay, and so does the tab's absence.
+	A:SetModuleEnabled("partyframes", false)
+	check(t:Node("party").button:IsShown() and not mgr:IsVisible(),
+		"our party frames off, the Toolbox's controls stay, and Blizzard's tab stays away")
+	A:SetModuleEnabled("partyframes", true)
+
+	-- RAID FRAMES OFF, IN A RAID, ON ERA: Blizzard's raid frames show - the
+	-- report that started this (Joe, 2026-10-24).
+	local RFm = A:GetModule("raidframes")
+	_G.__inRaid = true
+	_G.__raidRoster[1] = { unit = "raid1", subgroup = 1 }
+	_G.__raidRoster[2] = { unit = "raid2", subgroup = 1 }
+	fire("GROUP_ROSTER_UPDATE")
+	A:SetModuleEnabled("raidframes", false)
+	crf:Show()   -- as the client's tab, awake, would
+	check(crf:IsVisible(), "our raid frames off, Blizzard's show, with the tab still away")
+
+	-- IN A RAID THE NODE SAYS RAID, and Party again after (Joe, 2026-10-24).
+	check(t:Node("party").button.label:GetText() == (_G.RAID or "Raid"):upper(),
+		"in a raid the node is called Raid (" .. tostring(t:Node("party").button.label:GetText()) .. ")")
+	GT:BuildPanel()
+	GT:RefreshPanel()
+	check(GT.panel.head.label:GetText() == A.Trunk.Spaced(_G.RAID or "Raid"),
+		"and the branch is headed Raid (" .. tostring(GT.panel.head.label:GetText()) .. ")")
+
+	-- EVERYONE IS ASSISTANT: the raid leader's, a toggle.
+	local plainLeader, plainAll = UnitIsGroupLeader, IsEveryoneAssistant
+	local everyone, asked = false, nil
+	UnitIsGroupLeader = function(u) return u == "player" end
+	IsEveryoneAssistant = function() return everyone end
+	_G.C_PartyInfo = _G.C_PartyInfo or {}
+	local plainSet = C_PartyInfo.SetEveryoneIsAssistant
+	C_PartyInfo.SetEveryoneIsAssistant = function(on) asked = on; everyone = on end
+	GT:RefreshPanel()
+	check(GT.panel.assist:IsShown() and not GT.panel.assist:IsOn(),
+		"the raid leader has Everyone is Assistant, off")
+	GT.panel.assist:GetScript("OnClick")(GT.panel.assist)
+	check(asked == true and GT.panel.assist:IsOn(), "and switches it on through the client")
+	local convert
+	for _, b in ipairs(GT.panel.rows) do if b.spec.key == "raid" then convert = b end end
+	check(convert and not convert:IsShown(), "Convert to Raid is not offered in a raid")
+	UnitIsGroupLeader = function() return false end
+	GT:RefreshPanel()
+	check(not GT.panel.assist:IsShown(), "a member is not offered it")
+	UnitIsGroupLeader, IsEveryoneAssistant = plainLeader, plainAll
+	C_PartyInfo.SetEveryoneIsAssistant = plainSet
+
+	_G.__inRaid = false
+	wipe(_G.__raidRoster)
+	fire("GROUP_ROSTER_UPDATE")
+	check(t:Node("party").button.label:GetText() == (_G.PARTY or "Party"):upper(),
+		"back in a party, it is Party again")
+	A:SetModuleEnabled("raidframes", true)
+
+	-- THE TOOLBOX OFF: Blizzard's tab comes back, the raid frames with it.
+	A:SetModuleEnabled("toolbox", false)
+	check(mgr:GetParent() == UIParent and not A.banished[mgr],
+		"the Toolbox off, Blizzard's raid tab is back")
+	A:SetModuleEnabled("toolbox", true)
+	check(not mgr:IsVisible(), "and on again, it is put away")
 end)
 
 section("party: what a capsule says about the person", function()
@@ -12780,6 +12876,7 @@ end)
 
 section("party: a slot that empties does not move the others", function()
 	local PF = A:GetModule("partyframes")
+	local GT = A:GetModule("grouptools")
 	local f2, f3 = PF.frames[2], PF.frames[3]
 
 	-- FIXED SLOTS, and this is the reason for them. Re-anchoring a frame with a
@@ -12824,10 +12921,10 @@ section("party: a slot that empties does not move the others", function()
 	-- The dressing still has to run. Skipping the whole refresh would leave the
 	-- marker grid lit for whoever you were fighting a minute ago, which is the
 	-- opposite of what this event is here for.
-	PF:SetPanelOpen(true)
+	GT:SetPanelOpen(true)
 	_G.__inCombat = false
 	fire("PLAYER_TARGET_CHANGED")
-	local x0, y0 = select(4, PF.panel:GetPoint())
+	local x0, y0 = select(4, GT.panel:GetPoint())
 	_G.__inCombat = true
 	blocked = _G.__blocked
 	_G.__units.target = _G.__units.target or {}
@@ -12835,10 +12932,10 @@ section("party: a slot that empties does not move the others", function()
 	check(_G.__blocked == blocked,
 		"picking a new target mid-fight blocks nothing (" ..
 		(_G.__blocked - blocked) .. " refused calls)")
-	local x1, y1 = select(4, PF.panel:GetPoint())
+	local x1, y1 = select(4, GT.panel:GetPoint())
 	check(x1 == x0 and y1 == y0,
 		"the branch stays exactly where the fight found it")
-	PF:SetPanelOpen(false)
+	GT:SetPanelOpen(false)
 
 	local w = A.Config:Module("partyframes").width
 	A.Config:Module("partyframes").width = 400
@@ -22279,7 +22376,9 @@ do
 	A.Movers:Unlock()
 	check(TBm.root.glyph:IsShown() and TBm.root:IsMouseEnabled(), "unlocked, it is the handle")
 	A.Movers:Lock()
-	K.ys, K.order = {}, { "menu", "widgets", "addons", "settings", "news" }
+	-- The group's node too: the mock is in a party, and the controls are the
+	-- Toolbox's whether the party frames are on or not (they are off here).
+	K.ys, K.order = {}, { "menu", "widgets", "addons", "settings", "party", "news" }
 	for i, key in ipairs(K.order) do
 		local n = K.t:Node(key)
 		local x, y = K.at(n.button)
@@ -29884,8 +29983,8 @@ do
 	-- AND EVERY TRUNK BRANCH TAKES ITS OWN ONE (README: a branch panel is
 	-- glass at r 22), because they are all built by Trunk:Branch.
 	do
-		local TBm, PFm = A:GetModule("toolbox"), A:GetModule("partyframes")
-		local branches = { A.Mail:Build(), PFm:BuildPanel() }
+		local TBm, GTm = A:GetModule("toolbox"), A:GetModule("grouptools")
+		local branches = { A.Mail:Build(), GTm:BuildPanel() }
 		for _, b in ipairs(TBm.BRANCHES) do branches[#branches + 1] = TBm:Panel(b.key) end
 		local odd = {}
 		for _, p in ipairs(branches) do
@@ -35411,6 +35510,7 @@ end)
 -- earlier quietly spends the case they exist to make.
 section("party controls: the marks go on your target", function()
 	local PF = A:GetModule("partyframes")
+	local GT = A:GetModule("grouptools")
 	A:SetModuleEnabled("partyframes", true)
 	-- An earlier section takes the target away entirely, and a party control
 	-- that acts on your target has nothing to act on without one.
@@ -35419,7 +35519,7 @@ section("party controls: the marks go on your target", function()
 		creature = "Beast", hp = 640, hpMax = 1000, reaction = 2,
 		power = 0, powerMax = 0, powerType = 0, powerToken = "MANA",
 	}
-	local p = PF:BuildPanel()
+	local p = GT:BuildPanel()
 	check(p ~= nil, "the controls panel builds")
 	check(#p.wells == 8, "eight marks (" .. #p.wells .. ")")
 	check(p.clear ~= nil, "and a Clear that is not a ninth mark")
@@ -35466,9 +35566,9 @@ section("party controls: the marks go on your target", function()
 		check(not p:IsProtected(), "and nothing protected hangs from it, so it opens and shuts in a fight")
 		A:GetModule("toolbox"):SetOpen(true, nil, "menu")
 		check(not p:IsShown(), "opening another Toolbox branch shuts it: one at a time")
-		PF:TogglePanel()
+		GT:TogglePanel()
 		check(p:IsShown(), "and /lattice party's toggle opens it again")
-		PF:TogglePanel()
+		GT:TogglePanel()
 		check(not p:IsShown(), "and shuts it")
 
 		-- NOT IN A GROUP, NO NODE: a door to nothing.
@@ -35477,7 +35577,7 @@ section("party controls: the marks go on your target", function()
 			keep[u] = _G.__units[u].exists
 			_G.__units[u].exists = false
 		end
-		PF:TogglePanel()
+		GT:TogglePanel()
 		fire("GROUP_ROSTER_UPDATE")
 		check(not node.button:IsShown() and not p:IsShown(),
 			"alone, the node goes and an open branch shuts")
@@ -35491,7 +35591,7 @@ section("party controls: the marks go on your target", function()
 	-- unit is always "target". So with nothing targeted every well is inert,
 	-- and a well that looks pressable and does nothing is the worse of the two.
 	_G.__units.target.exists = false
-	PF:RefreshPanel()
+	GT:RefreshPanel()
 	local before = _G.__partyCalls.marks
 	p.wells[1]:GetScript("OnClick")(p.wells[1])
 	check(_G.__partyCalls.marks == before,
@@ -35501,7 +35601,7 @@ section("party controls: the marks go on your target", function()
 		tostring(p.wells[1]:GetAlpha()) .. ")")
 
 	_G.__units.target.exists = true
-	PF:RefreshPanel()
+	GT:RefreshPanel()
 
 	-- HIGHEST INDEX FIRST - skull, cross, square, moon, triangle, diamond,
 	-- circle, star. Blizzard's own grid has read that way since the marks
@@ -35536,7 +35636,7 @@ section("party controls: the marks go on your target", function()
 	if _G.__flavour == "camelot" then
 		local secret = _G.__SecretStandIn()
 		_G.__raidTargets.target, _G.__raidTargets.player = secret, secret
-		local ok, err = pcall(PF.RefreshPanel, PF)
+		local ok, err = pcall(GT.RefreshPanel, GT)
 		check(ok, "a secret mark on the target refreshes the grid without an"
 			.. " error (" .. tostring(err) .. ")")
 		local lit = 0
@@ -35564,7 +35664,8 @@ end)
 
 section("party: the stack is an ordinary placed frame", function()
 	local PF = A:GetModule("partyframes")
-	PF:BuildPanel()
+	local GT = A:GetModule("grouptools")
+	GT:BuildPanel()
 
 	-- NOTHING HANGS IT FROM THE CONTROLS ANY MORE. The dock it rode went with
 	-- the drawer era; the branch is a door off the trunk, and the party sits
@@ -35583,12 +35684,12 @@ section("party: the stack is an ordinary placed frame", function()
 	-- and a re-anchor per open was a protected call waiting to be refused.
 	local had = _G.__units.party1.exists
 	_G.__units.party1.exists = true
-	PF:SetPanelOpen(true)
-	check(PF:PanelOpen(), "the controls open")
+	GT:SetPanelOpen(true)
+	check(GT:PanelOpen(), "the controls open")
 	local _, relOpen, _, xOpen = PF.stack:GetPoint()
 	check(relOpen == UIParent and xOpen == 210,
 		"and opening them leaves the party exactly where it was")
-	PF:SetPanelOpen(false)
+	GT:SetPanelOpen(false)
 	_G.__units.party1.exists = had
 
 	-- DRAG IT AND IT IS YOURS; RESET HANDS IT BACK.
@@ -35603,7 +35704,8 @@ section("party: the stack is an ordinary placed frame", function()
 end)
 section("party: the count is who is online, and the refresh survives off/on", function()
 	local PF = A:GetModule("partyframes")
-	if not PF.panel then PF:OpenPanel() PF.panel:Hide() end
+	local GT = A:GetModule("grouptools")
+	if not GT.panel then GT:OpenPanel() GT.panel:Hide() end
 	-- The heading read n/n, the same number twice.
 	local saved = {}
 	for i = 1, 4 do
@@ -35611,12 +35713,12 @@ section("party: the count is who is online, and the refresh survives off/on", fu
 		saved[u] = _G.__units[u]
 		_G.__units[u] = { exists = i <= 3, offline = (i == 2), hp = 1, hpMax = 1 }
 	end
-	PF:RefreshPanel()
-	check(PF.panel.head.hint:GetText() == "3/4",
+	GT:RefreshPanel()
+	check(GT.panel.head.hint:GetText() == "3/4",
 		"the party heading counts who is online of the group ("
-		.. tostring(PF.panel.head.hint:GetText()) .. ")")
+		.. tostring(GT.panel.head.hint:GetText()) .. ")")
 	for u, d in pairs(saved) do _G.__units[u] = d end
-	PF:RefreshPanel()
+	GT:RefreshPanel()
 	-- Absorbs have no event here and ride the 10 Hz refresh, which one off/on
 	-- used to stop for the session.
 	A:SetModuleEnabled("partyframes", false)
@@ -35630,7 +35732,8 @@ section("party: the count is who is online, and the refresh survives off/on", fu
 end)
 section("party controls: what a member may press", function()
 	local PF = A:GetModule("partyframes")
-	local p = PF.panel
+	local GT = A:GetModule("grouptools")
+	local p = GT.panel
 	local calls = _G.__partyCalls
 	_G.__units.target = _G.__units.target
 		or { exists = true, hp = 1, hpMax = 1 }
@@ -35640,7 +35743,7 @@ section("party controls: what a member may press", function()
 	-- and a button that does nothing without saying so is a button you keep
 	-- pressing. So they are gone for a member and the panel is shorter.
 	_G.__units.player.leader = false
-	PF:RefreshPanel()
+	GT:RefreshPanel()
 	local shortH = p:GetHeight()
 	local hidden, visible = 0, 0
 	for _, b in ipairs(p.rows) do
@@ -35653,7 +35756,7 @@ section("party controls: what a member may press", function()
 		"and the one left is Countdown - the client does not gate that one")
 
 	_G.__units.player.leader = true
-	PF:RefreshPanel()
+	GT:RefreshPanel()
 	check(p:GetHeight() > shortH,
 		"the panel is taller for a leader (" .. p:GetHeight() .. " from " ..
 		shortH .. ")")
@@ -35718,12 +35821,12 @@ section("party controls: what a member may press", function()
 	local gold, ir, ig = A.Palette.c.semanticGold, p.rows[4].icon:GetVertexColor()
 	check(gold and math.abs(ir - gold[1]) < 0.01 and math.abs(ig - gold[2]) < 0.01,
 		"Convert to Raid keeps its gold icon - it changes the group's shape")
-	PF:RefreshPanel()
+	GT:RefreshPanel()
 	local tr, tg = p.rows[2].pick.text:GetTextColor()
 	check(math.abs(tr - A.Palette.c.text[1]) < 0.01 and math.abs(tg - A.Palette.c.text[2]) < 0.01,
 		"and the countdown's number rests at full ink, not dim")
 
-	PF.panel:Hide()
+	GT.panel:Hide()
 end)
 section("party: a diagnostic that answers the question", function()
 	local PF = A:GetModule("partyframes")
@@ -35758,6 +35861,7 @@ end)
 
 section("party controls: the last person leaves and they go too", function()
 	local PF = A:GetModule("partyframes")
+	local GT = A:GetModule("grouptools")
 
 	-- THE ROSTER PUT BACK EXACTLY AS IT WAS FOUND. Blocks above this one
 	-- leave members standing, and blocks below expect them - a section that
@@ -35775,14 +35879,14 @@ section("party controls: the last person leaves and they go too", function()
 	_G.__units.party1.exists = true
 	_G.__units.party2.exists = true
 	fire("GROUP_ROSTER_UPDATE")
-	PF:SetPanelOpen(true)
-	check(PF:PanelOpen() and PF.panel:IsShown() and node.button:IsShown(),
+	GT:SetPanelOpen(true)
+	check(GT:PanelOpen() and GT.panel:IsShown() and node.button:IsShown(),
 		"with a party, the controls open and the node is there to shut them")
 
 	-- One leaves, and nothing has changed: there is still somebody to mark.
 	_G.__units.party2.exists = false
 	fire("GROUP_ROSTER_UPDATE")
-	check(PF:PanelOpen() and PF.panel:IsShown(),
+	check(GT:PanelOpen() and GT.panel:IsShown(),
 		"one member leaving leaves them open - there is still a party")
 
 	-- And the last one does.
@@ -35791,7 +35895,7 @@ section("party controls: the last person leaves and they go too", function()
 	check(GetNumGroupMembers() == 0 and not node.button:IsShown(),
 		"the node goes when the group empties (" ..
 		GetNumGroupMembers() .. " left)")
-	check(not PF:PanelOpen() and not PF.panel:IsShown(),
+	check(not GT:PanelOpen() and not GT.panel:IsShown(),
 		"and the controls go with it, rather than being left with no way to "
 		.. "shut them")
 
@@ -35799,10 +35903,10 @@ section("party controls: the last person leaves and they go too", function()
 	-- door: the next invite has to be able to open them again.
 	_G.__units.party1.exists = true
 	fire("GROUP_ROSTER_UPDATE")
-	PF:SetPanelOpen(true)
-	check(PF:PanelOpen() and PF.panel:IsShown(),
+	GT:SetPanelOpen(true)
+	check(GT:PanelOpen() and GT.panel:IsShown(),
 		"and a new party opens them again")
-	PF:SetPanelOpen(false)
+	GT:SetPanelOpen(false)
 
 	for _, u in ipairs(UNITS) do _G.__units[u].exists = was[u] end
 	fire("GROUP_ROSTER_UPDATE")
