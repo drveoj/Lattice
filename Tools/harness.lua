@@ -3754,7 +3754,14 @@ else
 	CreateFrame("Frame", "QuestWatchFrame", UIParent)
 	function QuestWatch_Update() _G.__questWatchUpdated = (_G.__questWatchUpdated or 0) + 1 end
 end
+-- Callbacks an addon hangs on a menu by its tag (Menu.lua:2615), kept so a
+-- test can run them into a root of its own.
+_G.__menuMods = {}
 Menu = {
+	ModifyMenu = function(tag, callback)
+		_G.__menuMods[tag] = _G.__menuMods[tag] or {}
+		table.insert(_G.__menuMods[tag], callback)
+	end,
 	-- Kept, not run, so a test can run it into a root of its own, as it does
 	-- the context menu's.
 	PopulateDescription = function(generator, _, desc) desc.generator = generator end,
@@ -7399,7 +7406,21 @@ _G.__groupHeaders = {}
 local headerBase = CreateFrame
 function _G.__updateHeader(h)
 	local list = {}
-	if IsInRaid() and h:GetAttribute("showRaid") then
+	local nameList = h:GetAttribute("nameList")
+	if IsInRaid() and h:GetAttribute("showRaid") and nameList and not h:GetAttribute("groupFilter") then
+		-- BY NAME (:476-486): only those named, and with sortMethod NAMELIST
+		-- in the order named. An empty list names nobody.
+		local order = {}
+		for n in tostring(nameList):gmatch("[^,]+") do order[#order + 1] = n end
+		local byName = {}
+		for _, r in ipairs(_G.__raidRoster) do
+			local d = _G.__units[r.unit]
+			if d and d.name then byName[d.name] = r.unit end
+		end
+		for _, n in ipairs(order) do
+			if byName[n] then list[#list + 1] = byName[n] end
+		end
+	elseif IsInRaid() and h:GetAttribute("showRaid") then
 		local filter = {}
 		for g in tostring(h:GetAttribute("groupFilter") or ""):gmatch("%d+") do
 			filter[tonumber(g)] = true
@@ -36423,6 +36444,11 @@ section("raid frames: the weave", function()
 
 	-- PHASE 2, THE GROUP BOND (Raid.dc.html 13b-13d). Three rows at 20-man
 	-- density: 30 high, 5 between groups, so the centres are 15, 50 and 85.
+	-- With nothing pinned: the pins of phase 3 move the root, below.
+	local rcfg = A.Config:Module("raidframes")
+	local keepPins = { rcfg.pinTanks, rcfg.pinHealers, rcfg.pinBossTarget }
+	rcfg.pinTanks, rcfg.pinHealers, rcfg.pinBossTarget = false, false, false
+	RF:Layout()
 	local B = RF.bond
 	local function at(r) local _, _, _, x, y = r:GetPoint(1) return x, y end
 	local rx, ry = at(B.root)
@@ -36483,6 +36509,93 @@ section("raid frames: the weave", function()
 	check(keys.raid and not keys.party and keys.raid.mover == "raid"
 		and OWm:Page("raidframes") and OWm:Page("raidframes").unlock[1] == "raid",
 		"in a raid the map shows the Raid node, opening the raid page, and no Party node")
+
+	-- PHASE 3, THE PINS (README, "Pin"). Member1 is the raid's tank.
+	check(not B.weaveStub:IsShown() and not RF.pinLabel:IsShown(),
+		"with nothing pinned there is no pin row and no second stub")
+	rcfg.pinTanks = true
+	RF:OnConfigChanged()
+	local PH = RF.pinHeader
+	local P1 = PH:GetAttribute("child1")
+	local pH = A.Config:Module("partyframes").height
+	check(P1 and P1.dressed and P1.unit == "raid1" and P1:IsShown() and P1.glass:IsShown()
+		and P1.name:GetText() == "Member1",
+		"pinning tanks puts the tank above the weave as a party capsule (" .. tostring(P1 and P1.unit) .. ")")
+	check(P1.__w == 250 and RF.pinLabel:IsShown()
+		and RF.pinLabel:GetText() == ("Pinned \194\183 Tanks"):upper(),
+		"250 wide for one, under its label (" .. tostring(P1.__w) .. ", " .. tostring(RF.pinLabel:GetText()) .. ")")
+	-- The bond: the root on the pin row, a thin stub to the weave's first row.
+	local rowY = 12 + 10
+	local _, ry3 = at(B.root)
+	local _, wy3 = at(B.weaveStub)
+	local firstRow = rowY + pH + 16 + 15
+	check(ry3 == -(rowY + pH / 2) and B.weaveStub:IsShown() and wy3 == -firstRow
+		and B.weaveStub._aetherTintAlpha == 0.3,
+		"the root moves to the pin row, and a 30% stub reaches the weave, 16 below ("
+		.. tostring(ry3) .. ", " .. tostring(wy3) .. ")")
+	check(select(5, RF.headers[1]:GetPoint(1)) == -(rowY + pH + 16),
+		"and the weave starts 16 below the pins")
+
+	-- HOVER A PIN, ITS CELL LIGHTS (a pin copies; the cell stays).
+	P1:GetScript("OnEnter")(P1)
+	check(A1.copied and A1:IsShown() and A1._edgeColor and A1._edgeColor[4] == 0.6,
+		"hovering the pin lights the tank's cell, which stays in the weave")
+	P1:GetScript("OnLeave")(P1)
+	check(not A1.copied and A1._edgeToken == "glassEdge", "and lets it go")
+
+	-- BY NAME, from the raid member's own right-click menu.
+	local mods = _G.__menuMods.MENU_UNIT_RAID_PLAYER or {}
+	local function menuFor(unit)
+		local root = { items = {} }
+		function root:CreateDivider() end
+		function root:CreateButton(text, fn) self.items[#self.items + 1] = { text = text, fn = fn } end
+		for _, fn in ipairs(mods) do fn(nil, root, { unit = unit }) end
+		return root.items
+	end
+	local items = menuFor("raid3")
+	check(#mods > 0 and items[1] and items[1].text == A.L.raid.pin,
+		"a raid member's menu offers to pin them (" .. tostring(items[1] and items[1].text) .. ")")
+	items[1].fn()
+	local P2 = PH:GetAttribute("child2")
+	check(RF:IsPinned("Member3") and P2.unit == "raid3" and P1.unit == "raid1"
+		and P1.__w == 250 and P2.__w == 250,
+		"pinned by name: after the tank, still 250 wide for two")
+	check(menuFor("raid3")[1].text == A.L.raid.unpin, "and their menu now offers to unpin them")
+	for _, u in ipairs({ "raid5", "raid7" }) do menuFor(u)[1].fn() end
+	check(P1.__w == 190 and PH:GetAttribute("child4").unit == "raid7",
+		"four pinned, each 190 wide, in the order pinned")
+
+	-- IN A FIGHT IT WAITS, and says so; the header keeps its people meanwhile.
+	_G.__inCombat = true
+	local said = 0
+	local print_ = A.Print
+	A.Print = function(self, ...) said = said + 1 return print_(self, ...) end
+	menuFor("raid7")[1].fn()
+	check(RF.pendingLayout and said == 1 and PH:GetAttribute("child4").unit == "raid7",
+		"unpinning mid-fight waits for the end of it, and says so")
+	A.Print = print_
+	_G.__inCombat = false
+	fire("PLAYER_REGEN_ENABLED")
+	check(not RF:IsPinned("Member7") and not PH:GetAttribute("child4"):IsShown()
+		and P1.__w == 220,
+		"and then takes effect (three left, " .. tostring(P1.__w) .. " wide)")
+
+	-- THE BOSS'S TARGET: its own button, on boss1target, shown when there is one.
+	rcfg.pinBossTarget = true
+	RF:OnConfigChanged()
+	check(RF.bossPin.dressed and RF.bossPin.unit == "boss1target" and RF.bossPin.__unitWatch
+		and RF.pinLabel:GetText():find(A.L.raid.pinned_boss:upper(), 1, true),
+		"pinning the boss's target watches boss1target, and the label says so")
+	RF.bossPin:GetScript("OnEnter")(RF.bossPin)
+	local lit = 0
+	for _, cell in ipairs(RF:Cells()) do if cell.copied then lit = lit + 1 end end
+	check(lit == 0, "and hovering it lights no cell (Joe's decision, 2026-10-23)")
+	RF.bossPin:GetScript("OnLeave")(RF.bossPin)
+
+	-- Back as it was: nobody pinned by name, the switches restored.
+	for _, n in ipairs({ "Member3", "Member5" }) do RF:SetPinned(n, false) end
+	rcfg.pinTanks, rcfg.pinHealers, rcfg.pinBossTarget = keepPins[1], keepPins[2], keepPins[3]
+	RF:OnConfigChanged()
 
 	-- HEALTH: the fill's colour and the low number, by the helpers.
 	_G.__units.raid1.hp = 30

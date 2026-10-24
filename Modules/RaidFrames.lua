@@ -1,9 +1,18 @@
 --[[--------------------------------------------------------------------------
 	Lattice :: Raid frames - the weave
 
-	Phases 1 and 2 of the raid build (sara-vault: "Lattice Raid Frames Build
+	Phases 1 to 3 of the raid build (sara-vault: "Lattice Raid Frames Build
 	Plan"): every member of the raid as a cell, in one look, hung off its group
-	bond and bonded to the player. No pins or lenses yet - phases 3 and 4.
+	bond and bonded to the player, with the people you watch pinned above it as
+	full capsules. No lenses yet - phase 4.
+
+	PINS COPY, they do not move anyone: a pinned member keeps their cell, and
+	hovering the pin lights it (Joe, 2026-10-23). The pins are ONE MORE CLIENT
+	HEADER, kept on its people by a list of names (nameList, sorted as listed:
+	SecureGroupHeaders.lua:476-486) - so a roster that reshuffles mid-fight
+	still finds them, securely. The list is written out of combat: the Main
+	Tanks and tanks, the healers, then whoever you pinned by name. The boss's
+	target is not a raid member, so it is its own button, on boss1target.
 
 	THE GROUP BOND (Raid.dc.html 13b-13d): a strand down the weave's left edge,
 	a root node at its top, a stub across the gutter to the first row, and the
@@ -85,6 +94,14 @@ local BOND = 50
 local NUMBER, NUMBER_GAP = 14, 5
 local ROWS_X = BOND + NUMBER + NUMBER_GAP
 local ROOT = 8   -- the root node, r = 4
+
+-- The pins (README, "Pin"): five at most, in a row above the weave under
+-- their label, as wide as their count allows, the weave 16 below them.
+local PINS = 5
+local PIN_W = { 250, 250, 220, 190, 190 }
+local PIN_GAP = 10
+local PIN_LABEL_H, PIN_LABEL_GAP = 12, 10
+local PIN_TO_WEAVE = 16
 
 local ICON = 12   -- an aura, the client's own icon
 local ICONS = 3   -- in all, whatever they are
@@ -331,7 +348,9 @@ function RF:UpdateEdge(cell)
 	if colour then
 		cell:SetEdgeColor(colour)
 		cell:SetRimGlow({ colour[1], colour[2], colour[3], 0.6 })
-	elseif cell.hovered then
+	elseif cell.hovered or cell.copied then
+		-- Its own hover, or its pin's: a pin copies its member, and hovering
+		-- the pin lights the cell it copies (README, "Pin").
 		local a = c.accent
 		cell:SetEdgeColor({ a[1], a[2], a[3], 0.6 })
 		cell:SetRimGlow(nil)
@@ -467,6 +486,162 @@ local function ForUnit(unit, fn)
 end
 
 -- ---------------------------------------------------------------------------
+-- the pins
+-- ---------------------------------------------------------------------------
+
+local function PinStore()
+	local char = A.db and A.db.char
+	if not char then return { names = {} } end
+	char.raidPins = char.raidPins or {}
+	char.raidPins.names = char.raidPins.names or {}
+	return char.raidPins
+end
+
+--- Who is pinned, in order, each once and five at most: the Main Tanks and
+--  tanks, the healers, then the names you pinned who are in the raid. Read
+--  from the roster, so out of combat: GetRaidRosterInfo's tenth answer is the
+--  raid role (MAINTANK - what a raid leader sets on Era, where a role is
+--  opt-in), its twelfth the assigned one.
+function RF:PinNames()
+	local c = cfg()
+	local out, seen, here = {}, {}, {}
+	local function add(name)
+		if name and not seen[name] and #out < PINS then
+			seen[name] = true
+			out[#out + 1] = name
+		end
+	end
+	if not (IsInRaid and IsInRaid()) then return out end
+	local roster = {}
+	for i = 1, (GetNumGroupMembers and GetNumGroupMembers() or 0) do
+		local name, _, _, _, _, _, _, _, _, role, _, assigned = GetRaidRosterInfo(i)
+		if name and not A.IsSecret(name) then
+			if A.IsSecret(role) then role = nil end
+			if A.IsSecret(assigned) then assigned = nil end
+			roster[#roster + 1] = { name = name, role = role, assigned = assigned }
+			here[name] = true
+		end
+	end
+	if c.pinTanks then
+		for _, r in ipairs(roster) do
+			if r.role == "MAINTANK" or r.assigned == "TANK" then add(r.name) end
+		end
+	end
+	if c.pinHealers then
+		for _, r in ipairs(roster) do
+			if r.assigned == "HEALER" then add(r.name) end
+		end
+	end
+	for _, name in ipairs(PinStore().names) do
+		if here[name] then add(name) end
+	end
+	return out
+end
+
+function RF:IsPinned(name)
+	for _, n in ipairs(PinStore().names) do
+		if n == name then return true end
+	end
+	return false
+end
+
+--- Pin or unpin someone by name, kept per character. The row is laid out
+--  again out of combat; in a fight that waits, and says so.
+function RF:SetPinned(name, on)
+	local names = PinStore().names
+	for i = #names, 1, -1 do
+		if names[i] == name then table.remove(names, i) end
+	end
+	if on then names[#names + 1] = name end
+	if InCombatLockdown() then A:Print(L.raid.after_combat) end
+	self:Layout()
+end
+
+--- What the row's label says: PINNED, then what pins it.
+local function PinRule()
+	local c, parts = cfg(), {}
+	if c.pinTanks then parts[#parts + 1] = L.raid.pinned_tanks end
+	if c.pinHealers then parts[#parts + 1] = L.raid.pinned_healers end
+	if #PinStore().names > 0 then parts[#parts + 1] = L.raid.pinned_names end
+	if c.pinBossTarget then parts[#parts + 1] = L.raid.pinned_boss end
+	local s = L.raid.pinned
+	if parts[1] then s = s .. " \194\183 " .. table.concat(parts, " \194\183 ") end
+	return s:upper()
+end
+
+--- A pin is the party capsule (Modules/PartyFrames.lua), dressed onto the
+--  secure button its header - or, for the boss's target, we - made.
+local function PartyModule() return A:GetModule("partyframes") end
+
+function RF:UpdatePinEdge(pin)
+	-- Pins carry the threat edge whatever the lens (README, "Pin").
+	local unit = pin.unit
+	local threat = unit and UnitThreatSituation and UnitThreatSituation(unit)
+	if A.IsSecret(threat) then threat = nil end
+	local colour
+	if threat == 1 then colour = Palette.c.danger
+	elseif threat and threat >= 2 then colour = PULLED end
+	if colour then
+		pin.glass:SetEdgeColor(colour)
+		pin.glass:SetRimGlow({ colour[1], colour[2], colour[3], 0.6 })
+	else
+		pin.glass:SetRimGlow(nil)
+	end
+end
+
+local function UpdatePin(pin)
+	if not pin.dressed then return end
+	if not pin.unit then pin.glass:Hide() return end
+	PartyModule().UpdateAll(pin)
+	RF:UpdatePinEdge(pin)
+end
+
+--- Hovering a pin lights the cell it copies. Not the boss's target's: its
+--  cell cannot be found on Forever (Joe's decision, 2026-10-23).
+function RF:CopyHighlight(pin, on)
+	if pin.isBoss then return end
+	for _, cell in ipairs(self:Cells()) do
+		if cell.unit == pin.unit then
+			cell.copied = on or nil
+			self:UpdateEdge(cell)
+		end
+	end
+end
+
+local function DressPin(pin)
+	if pin.dressed then return end
+	pin.dressed = true
+	PartyModule().BuildCapsule(pin:GetAttribute("unit"), pin)
+	pin:HookScript("OnEnter", function(self) RF:CopyHighlight(self, true) end)
+	pin:HookScript("OnLeave", function(self) RF:CopyHighlight(self, false) end)
+	-- The header hands a pin its member, in a fight or out.
+	pin:HookScript("OnAttributeChanged", function(self, name)
+		if name == "unit" then
+			self.unit = self:GetAttribute("unit")
+			UpdatePin(self)
+		end
+	end)
+end
+
+--- Every dressed pin, the boss's target's last.
+function RF:Pins()
+	local out = {}
+	local h = self.pinHeader
+	for i = 1, PINS do
+		local p = h and h:GetAttribute("child" .. i)
+		if p and p.dressed then out[#out + 1] = p end
+	end
+	if self.bossPin then out[#out + 1] = self.bossPin end
+	return out
+end
+
+local function ForPin(unit)
+	for _, p in ipairs(RF:Pins()) do
+		if p.unit == unit then UpdatePin(p) end
+	end
+end
+
+-- ---------------------------------------------------------------------------
 -- the weave
 -- ---------------------------------------------------------------------------
 
@@ -517,30 +692,83 @@ function RF:Build()
 	bond.root = weave:CreateTexture(nil, "ARTWORK")
 	bond.root:SetTexture(Media.texture.chipDisc)
 	bond.root:SetSize(ROOT, ROOT)
+	-- With pins, the root goes to their row, and this thinner stub at 30%
+	-- reaches the first row of the weave.
+	bond.weaveStub = weave:CreateTexture(nil, "BACKGROUND")
+	bond.weaveStub:SetTexture(Media.texture.flat)
+	bond.weaveStub:SetHeight(1)
 	-- The strand's foot: where the bond to the player leaves it in unlock.
 	bond.foot = CreateFrame("Frame", nil, weave)
 	bond.foot:SetSize(1, 1)
 	self.bond = bond
+
+	-- THE PINS: their label, one more client header kept on its people by
+	-- name, and the boss's target on a button of its own.
+	self.pinLabel = W.Text(weave, "label", "LEFT")
+	W.Color(self.pinLabel, Palette.c.accent)
+	self.pinLabel:SetAlpha(0.55)
+
+	local ph = CreateFrame("Frame", ADDON .. "RaidPins", weave, "SecureGroupHeaderTemplate")
+	ph:SetAttribute("template", "SecureUnitButtonTemplate")
+	ph:SetAttribute("showRaid", true)
+	-- An empty list is a list: nobody, not "everybody" (:407-408).
+	ph:SetAttribute("nameList", "")
+	ph:SetAttribute("sortMethod", "NAMELIST")
+	ph:SetAttribute("point", "LEFT")
+	ph:SetAttribute("xOffset", PIN_GAP)
+	ph:SetAttribute("unitsPerColumn", PINS)
+	ph:SetAttribute("maxColumns", 1)
+	-- Empty, it shrinks to nothing (:122-125), so the boss's pin after it
+	-- starts the row.
+	ph:SetAttribute("minWidth", 0.1)
+	ph:SetAttribute("minHeight", 0.1)
+	ph:SetAttribute("initialConfigFunction", [[
+		local header = self:GetParent()
+		self:SetWidth(header:GetAttribute("pinW") or 250)
+		self:SetHeight(header:GetAttribute("pinH") or 44)
+		self:SetAttribute("*type1", "target")
+		self:SetAttribute("*type2", "togglemenu")
+	]])
+	ph:Show()
+	self.pinHeader = ph
+
+	local boss = CreateFrame("Button", ADDON .. "RaidPinBoss", weave, "SecureUnitButtonTemplate")
+	boss:SetAttribute("unit", "boss1target")
+	boss:SetAttribute("*type1", "target")
+	boss:SetAttribute("*type2", "togglemenu")
+	boss:RegisterForClicks("AnyUp")
+	boss:Hide()
+	boss.isBoss = true
+	DressPin(boss)
+	self.bossPin = boss
 end
 
---- Lay the bond along the rows: the root and the stub on the first row's
---  centre line, the strand down to the last's. `first` and `last` are those
---  centres, measured down from the weave's top.
-function RF:LayBond(first, last)
+--- Lay the bond along the rows. `first` and `last` are the first and last
+--  rows' centres, measured down from the weave's top; `pins`, the pin row's,
+--  when there is one. The root and its stub sit on the top one of those, the
+--  strand runs down to the last row, and with pins a thinner stub at 30%
+--  reaches the first row of the weave (README, "Group bond").
+function RF:LayBond(first, last, pins)
 	local b, a = self.bond, Palette.c.accent
+	local top = pins or first
 	W.Tint(b.strand, a, 0.45)
 	W.Tint(b.stub, a, 0.45)
 	W.Tint(b.root, a, 1)
+	W.Tint(b.weaveStub, a, 0.3)
 
 	b.root:ClearAllPoints()
-	b.root:SetPoint("CENTER", self.weave, "TOPLEFT", 0, -first)
+	b.root:SetPoint("CENTER", self.weave, "TOPLEFT", 0, -top)
 	b.stub:ClearAllPoints()
-	b.stub:SetPoint("LEFT", self.weave, "TOPLEFT", 0, -first)
+	b.stub:SetPoint("LEFT", self.weave, "TOPLEFT", 0, -top)
 	b.stub:SetWidth(BOND)
+	b.weaveStub:ClearAllPoints()
+	b.weaveStub:SetPoint("LEFT", self.weave, "TOPLEFT", 0, -first)
+	b.weaveStub:SetWidth(BOND)
+	b.weaveStub:SetShown(pins ~= nil)
 	b.strand:ClearAllPoints()
-	b.strand:SetPoint("TOP", self.weave, "TOPLEFT", 0, -first)
-	b.strand:SetHeight(math.max(0.01, last - first))
-	b.strand:SetShown(last > first)
+	b.strand:SetPoint("TOP", self.weave, "TOPLEFT", 0, -top)
+	b.strand:SetHeight(math.max(0.01, last - top))
+	b.strand:SetShown(last > top)
 	b.foot:ClearAllPoints()
 	b.foot:SetPoint("CENTER", self.weave, "TOPLEFT", 0, -last)
 end
@@ -561,6 +789,15 @@ function RF:Precreate()
 			local cell = h:GetAttribute("child" .. i)
 			if cell then DressCell(cell) end
 		end
+	end
+	-- The five pins too, for the same reason: a tank who joins mid-fight
+	-- gets a dressed capsule.
+	local ph = self.pinHeader
+	ph:SetAttribute("startingIndex", 1 - PINS)
+	ph:SetAttribute("startingIndex", 1)
+	for i = 1, PINS do
+		local pin = ph:GetAttribute("child" .. i)
+		if pin then DressPin(pin) end
 	end
 	weave:SetAlpha(alpha)
 	self:DriveVisibility()
@@ -592,8 +829,54 @@ function RF:Layout()
 		end
 	end
 
-	local y = 0
+	-- THE PINS, a row above the weave under their label, as wide as their
+	-- count allows; the weave starts 16 below them (README, "Pin").
+	local c = cfg()
+	local names = self:PinNames()
+	local bossOn = c.pinBossTarget and true or false
+	local count = #names + (bossOn and 1 or 0)
+	local ph, boss = self.pinHeader, self.bossPin
+	local y, pinsY = 0, nil
+	local pinsWidth = 0
+	self.pinLabel:SetShown(count > 0)
+	if count > 0 then
+		local pw = PIN_W[math.min(count, PINS)]
+		local pH = A.Config:Module("partyframes").height
+		self.pinLabel:SetText(PinRule())
+		self.pinLabel:ClearAllPoints()
+		self.pinLabel:SetPoint("TOPLEFT", self.weave, "TOPLEFT", BOND, 0)
+		local rowY = PIN_LABEL_H + PIN_LABEL_GAP
+		ph:SetAttribute("pinW", pw)
+		ph:SetAttribute("pinH", pH)
+		for i = 1, PINS do
+			local pin = ph:GetAttribute("child" .. i)
+			if pin then
+				pin:SetSize(pw, pH)
+				PartyModule().LayCapsule(pin, pw)
+			end
+		end
+		boss:SetSize(pw, pH)
+		PartyModule().LayCapsule(boss, pw)
+		ph:ClearAllPoints()
+		ph:SetPoint("TOPLEFT", self.weave, "TOPLEFT", BOND, -rowY)
+		boss:ClearAllPoints()
+		boss:SetPoint("TOPLEFT", ph, "TOPRIGHT", #names > 0 and PIN_GAP or 0, 0)
+		pinsY = rowY + pH / 2
+		pinsWidth = BOND + count * pw + (count - 1) * PIN_GAP
+		y = rowY + pH + PIN_TO_WEAVE
+	end
+	-- The list last: set while the header is shown, it re-lays it out.
+	ph:SetAttribute("nameList", table.concat(names, ","))
+	-- The boss's target shows itself when there is one - but only if asked.
+	if bossOn and RegisterUnitWatch then
+		RegisterUnitWatch(boss)
+	else
+		if UnregisterUnitWatch then UnregisterUnitWatch(boss) end
+		boss:Hide()
+	end
+
 	local first, last
+	local top = y
 	for gi, h in ipairs(self.headers) do
 		h:SetAttribute("cellW", d.w)
 		h:SetAttribute("cellH", d.h)
@@ -624,13 +907,14 @@ function RF:Layout()
 		end
 	end
 
-	local width = ROWS_X + PER_GROUP * d.w + (PER_GROUP - 1) * g.cell
-	local height = math.max(d.h, y - g.group)
+	local width = math.max(ROWS_X + PER_GROUP * d.w + (PER_GROUP - 1) * g.cell, pinsWidth)
+	local height = math.max(top + d.h, y - g.group)
 	self.weave:SetSize(width, height)
 	-- No one in a group yet (out of a raid): the bond on the first row.
-	self:LayBond(first or d.h / 2, last or d.h / 2)
+	self:LayBond(first or (top + d.h / 2), last or (top + d.h / 2), pinsY)
 
 	for _, cell in ipairs(self:Cells()) do UpdateCell(cell) end
+	for _, pin in ipairs(self:Pins()) do UpdatePin(pin) end
 end
 
 -- ---------------------------------------------------------------------------
@@ -655,20 +939,57 @@ local function Tick(_, elapsed)
 	if rangeClock < 0.5 then return end
 	rangeClock = 0
 	for _, cell in ipairs(RF:Cells()) do W.RangeAlpha(cell, cell.unit, 0.45) end
+	-- The pins as the party capsules are, on a tick - the boss's target among
+	-- them, which changes with no event on the unit it names.
+	for _, pin in ipairs(RF:Pins()) do
+		if pin:IsVisible() then UpdatePin(pin) end
+	end
+end
+
+--- PIN or UNPIN on a raid member's own right-click menu. Menu.ModifyMenu is
+--  the client's way in for an addon: it runs our callback, and the click on
+--  our item, each through securecallfunction (Menu.lua:2610-2611, :922), so
+--  Set Focus and the marks in the same menu stay clean.
+function RF:HookMenu()
+	if self.menuHooked or not (Menu and Menu.ModifyMenu) then return end
+	self.menuHooked = true
+	local function add(_, root, ctx)
+		if not (RF.enabled and IsInRaid and IsInRaid() and ctx and ctx.unit) then return end
+		local name = (GetUnitName and GetUnitName(ctx.unit, true)) or UnitName(ctx.unit)
+		if not name or A.IsSecret(name) then return end
+		local pinned = RF:IsPinned(name)
+		root:CreateDivider()
+		root:CreateButton(pinned and L.raid.unpin or L.raid.pin,
+			function() RF:SetPinned(name, not pinned) end)
+	end
+	-- A raid member's menu, whichever the client picks for them.
+	for _, tag in ipairs({ "MENU_UNIT_RAID_PLAYER", "MENU_UNIT_RAID", "MENU_UNIT_PARTY" }) do
+		Menu.ModifyMenu(tag, add)
+	end
 end
 
 function RF:RegisterEvents()
-	local function unitEvent(fn)
-		return function(_, _, unit) ForUnit(unit, fn) end
+	local function unitEvent(fn, pins)
+		return function(_, _, unit)
+			ForUnit(unit, fn)
+			if pins then ForPin(unit) end
+		end
 	end
-	A:RegisterEvent(self, "UNIT_HEALTH",        unitEvent(UpdateHealth))
-	A:RegisterEvent(self, "UNIT_MAXHEALTH",     unitEvent(UpdateHealth))
-	A:RegisterEvent(self, "UNIT_CONNECTION",    unitEvent(UpdateHealth))
-	A:RegisterEvent(self, "UNIT_FLAGS",         unitEvent(UpdateHealth))
-	A:RegisterEvent(self, "UNIT_NAME_UPDATE",   unitEvent(UpdateName))
+	A:RegisterEvent(self, "UNIT_HEALTH",        unitEvent(UpdateHealth, true))
+	A:RegisterEvent(self, "UNIT_MAXHEALTH",     unitEvent(UpdateHealth, true))
+	A:RegisterEvent(self, "UNIT_CONNECTION",    unitEvent(UpdateHealth, true))
+	A:RegisterEvent(self, "UNIT_FLAGS",         unitEvent(UpdateHealth, true))
+	A:RegisterEvent(self, "UNIT_NAME_UPDATE",   unitEvent(UpdateName, true))
 	A:RegisterEvent(self, "UNIT_AURA",          unitEvent(UpdateIcons))
 	A:RegisterEvent(self, "UNIT_THREAT_SITUATION_UPDATE",
-		unitEvent(function(cell) RF:UpdateEdge(cell) end))
+		unitEvent(function(cell) RF:UpdateEdge(cell) end, true))
+	A:RegisterEvent(self, "UNIT_POWER_UPDATE", function(_, _, unit) ForPin(unit) end)
+	A:RegisterEvent(self, "UNIT_MAXPOWER",     function(_, _, unit) ForPin(unit) end)
+	-- The boss's target: a new boss, or the boss turning to someone else.
+	A:RegisterEvent(self, "UNIT_TARGET", function(_, _, unit)
+		if unit == "boss1" then UpdatePin(RF.bossPin) end
+	end)
+	A:RegisterEvent(self, "INSTANCE_ENCOUNTER_ENGAGE_UNIT", function() UpdatePin(RF.bossPin) end)
 
 	local function sweep()
 		RF:HideBlizzard()
@@ -692,6 +1013,7 @@ function RF:OnEnable()
 	self:Precreate()
 	self:RegisterMovers()
 	self:RegisterEvents()
+	self:HookMenu()
 	self:HideBlizzard()
 	self:Layout()
 	A:RegisterTicker(self, Tick)
@@ -706,6 +1028,8 @@ end
 
 function RF:OnConfigChanged()
 	self:HideBlizzard()
+	-- Who is pinned may have changed.
+	if self.weave then self:Layout() end
 end
 
 function RF:OnSkinChanged()

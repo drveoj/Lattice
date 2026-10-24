@@ -1241,6 +1241,13 @@ local function RaidFramesGroup()
 			L.options.raid_frames.enabled_desc, at("enabled"), { defaultTrue = true }),
 		hideBlizzard = toggle(L.options.raid_frames.hide_blizzard, nil,
 			at("hideBlizzard")),
+		pinsHeader = header(L.options.raid_frames.pins),
+		pinTanks = toggle(L.options.raid_frames.pin_tanks.name,
+			L.options.raid_frames.pin_tanks.desc, at("pinTanks"), { defaultTrue = true }),
+		pinHealers = toggle(L.options.raid_frames.pin_healers, nil, at("pinHealers")),
+		pinBossTarget = toggle(L.options.raid_frames.pin_boss_target.name,
+			L.options.raid_frames.pin_boss_target.desc, at("pinBossTarget")),
+		pinNames = note(L.options.raid_frames.pin_names),
 		placement = note(A.F(L.options.raid_frames.placement, A.Hi("/lattice unlock"))),
 	})
 end

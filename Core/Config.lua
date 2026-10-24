@@ -70,6 +70,11 @@ Config.defaults = {
 
 		tracked   = {},   -- whitelist, used when autoTrack is off
 		untracked = {},   -- blacklist, used when autoTrack is on
+
+		-- The raid members you pinned by name (right-click a cell). Per
+		-- character, as the raid handoff has it: who you watch is a matter of
+		-- whose healer you are tonight.
+		raidPins  = { names = {} },
 	},
 
 	profile = {
@@ -193,6 +198,12 @@ Config.defaults = {
 			raidframes = {
 				enabled      = true,
 				hideBlizzard = true,
+				-- Who is pinned above the weave as a full capsule (raid build
+				-- phase 3). Tanks by default; the lenses of phase 4 will set
+				-- these by your role.
+				pinTanks      = true,
+				pinHealers    = false,
+				pinBossTarget = false,
 			},
 
 			-- The class resource tray under the player capsule: combo points

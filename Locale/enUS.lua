@@ -1387,10 +1387,30 @@ L["options.party_frames.placement"] =
 L["options.raid_frames.raid_frames"] = "Raid frames"
 L["options.raid_frames.enabled_desc"] =
 	"Everyone in your raid as a glass cell, group by group. Blizzard's raid "
-		.. "frames come back when this is off, after a reload."
+		.. "frames come back when this is off."
 L["options.raid_frames.hide_blizzard"] = "Hide Blizzard's raid frames"
 L["options.raid_frames.placement"] =
 	"The groups move as one: unlock with %s and drag the raid."
+L["options.raid_frames.pins"] = "Pinned above the raid"
+L["options.raid_frames.pin_tanks.name"] = "Pin the tanks"
+L["options.raid_frames.pin_tanks.desc"] =
+	"Your Main Tanks and anyone whose role is tank, as full capsules above "
+		.. "the raid."
+L["options.raid_frames.pin_healers"] = "Pin the healers"
+L["options.raid_frames.pin_boss_target.name"] = "Pin the boss's target"
+L["options.raid_frames.pin_boss_target.desc"] =
+	"Whoever the boss is attacking, as a capsule that follows them."
+L["options.raid_frames.pin_names"] =
+	"Right-click anyone in the raid to pin or unpin them by name. Up to five "
+		.. "are pinned. Changes made in a fight wait until it ends."
+L["raid.pin"] = "Pin above the raid"
+L["raid.unpin"] = "Unpin"
+L["raid.pinned"] = "Pinned"
+L["raid.pinned_tanks"] = "Tanks"
+L["raid.pinned_healers"] = "Healers"
+L["raid.pinned_names"] = "Names"
+L["raid.pinned_boss"] = "Boss target"
+L["raid.after_combat"] = "Pins: applies after combat."
 L["options.party_frames.slot_whose_member_has"] =
 	"A slot whose member has gone leaves a gap rather than closing up. "
 		.. "Re-anchoring a frame you can click to target is refused by the "

@@ -165,15 +165,18 @@ end
 -- the capsule
 -- ---------------------------------------------------------------------------
 
-local function BuildCapsule(unit)
+--- One capsule. With `host` - a secure button something else made and owns,
+--  a raid pin's (Modules/RaidFrames.lua) - it is dressed in place: the host is
+--  already the click, and its size and unit are its maker's to set.
+local function BuildCapsule(unit, host)
 	local c = cfg()
 
 	-- The same two-frame split the player capsule uses: a plain core at a fixed
 	-- size, with the glass filling it. The frame carrying the secure template
 	-- never changes size for its whole life, which is a promise worth keeping
 	-- for the same reason it was made there.
-	local f = CreateFrame("Frame", nil, UIParent)
-	f:SetSize(c.width, c.height)
+	local f = host or CreateFrame("Frame", nil, UIParent)
+	if not host then f:SetSize(c.width, c.height) end
 	f.unit = unit
 
 	local glass = Glass.CreatePill(f, { shadow = A.db.profile.glass.shadow })
@@ -256,7 +259,7 @@ local function BuildCapsule(unit)
 	f.role = W.CreateDecorator(layer, pip, "BOTTOMRIGHT", { size = ROLE })
 
 	-- interaction -----------------------------------------------------------
-	if c.clickTarget then
+	if c.clickTarget and not host then
 		local click = CreateFrame("Button", ADDON .. "Party" .. unit,
 			f, "SecureUnitButtonTemplate")
 		click:SetAllPoints(f)
@@ -433,6 +436,18 @@ local function UpdateAll(f)
 end
 
 PF.UpdateAll = UpdateAll
+PF.BuildCapsule = BuildCapsule
+
+--- A capsule at `width`: the bars take what the pip and the readout leave,
+--  by the chain PF.MinWidth measures. A raid pin's widths are the handoff's,
+--  250, 220 or 190 by how many are pinned.
+function PF.LayCapsule(f, width)
+	local bar = width - (PAD_L + PIP + GAP_PIP + GAP_VAL + VAL_W + PAD_R)
+	f.block:SetWidth(bar)
+	f.health:SetWidth(bar)
+	f.power:SetWidth(bar)
+	f.glass:_Resize()
+end
 
 -- ---------------------------------------------------------------------------
 -- the stack
