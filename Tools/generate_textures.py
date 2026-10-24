@@ -397,14 +397,17 @@ def glass_panel_even_edge():
     1.0 drew about one physical pixel where the bars at 0.85 drew two - "surely
     at bigger scale those borders would look thicker, not thinner").
 
-    So this is the small rim scaled by four - peak 4, width 8 of a 64-texel
-    corner - and even all the way round like it. On glass_panel's 256 and its
-    MARGIN, so its outer edge lands on the frosted fill's exactly: the small
-    rim's two-texel margin is 2 of 64, and laid over this fill it would sit a
-    texel and a half inside the glass.
+    So this is the small rim at four times the size, even all the way round
+    like it: peak 4, and width 12 rather than 8. The outer feather (AA) and
+    MARGIN are fixed in texels, so they are a quarter the share here they are
+    on the small art; scaling them too would run the feather past the fill's
+    edge. The width makes up what they lose, so the rim's coverage - its alpha
+    summed across a side, which is how thick it looks - is the same share of
+    the corner (rims_agree holds it). On glass_panel's 256 and its MARGIN, so
+    its outer edge lands on the frosted fill's exactly.
     """
     size = (256, 256)
-    return rgba_lum(1.0, rim_from_sdf(rrect_sdf(size, 64, MARGIN), 8.0, peak=4.0))
+    return rgba_lum(1.0, rim_from_sdf(rrect_sdf(size, 64, MARGIN), 12.0, peak=4.0))
 
 
 def glass_panel_small_edge():
@@ -432,11 +435,19 @@ def glass_pill():
 
 
 def glass_pill_edge():
+    """The big capsule's rim: Glass-Pill-Small-Edge's, scaled by four.
+
+    THE SAME SHARE OF THE CAP AS THE SMALL ONE. Its width (3.6) was the small
+    rim's 0.9 scaled, but the peak - one texel in, _rim's default - was not,
+    so the lit band was 1/26 of the cap here and 1/16 on the small art. A
+    capsule crossing PILL_ART_MIN got the thinner border, the fault the panels
+    had (Joe, 2026-10-24: "yes, do the pills too"; see
+    glass_panel_even_edge). Peak 4, and width 7.6 rather than 3.6 to make up
+    the outer feather's smaller share, as there - the same coverage of the cap
+    (rims_agree holds it). Still feathered, still top-lit as the small one is.
+    """
     size = (512, 256)
-    # 3.6 texels at this size is 1.8 at the old one - a genuinely finer hairline
-    # than before, which is what it wanted. Still feathered, so the small pills
-    # get a soft thin line rather than a dashed one.
-    return rgba_lum(1.0, _rim(size, 128, width=3.6)
+    return rgba_lum(1.0, rim_from_sdf(rrect_sdf(size, 128, MARGIN), 7.6, peak=4.0)
                     * vgrad(size, 1.0, 0.55, gamma=0.9))
 
 
@@ -471,6 +482,7 @@ def glass_pill_small_edge():
     # with the texture. Still feathered - that feathering is the whole point.
     return rgba_lum(1.0, _rim(size, 32, width=0.9)
                     * vgrad(size, 1.0, 0.55, gamma=0.9))
+
 
 
 def glass_shadow():
@@ -1989,8 +2001,44 @@ def dial_sweeps_agree():
                          % (family, key, f.group(1).strip(), got, want))
 
 
+# Each shape drawn from two arts by size, as (big rim, small rim, big corner,
+# small corner): Core/Glass.lua swaps between them at PANEL_ART_MIN and
+# PILL_ART_MIN.
+RIM_PAIRS = (
+    (glass_panel_even_edge, glass_panel_small_edge, 64, 16),
+    (glass_pill_edge, glass_pill_small_edge, 128, 32),
+)
+
+
+def _rim_share(img, corner):
+    """How thick a rim looks, as a share of the corner: its alpha summed
+    across the top side at the middle column. Not the span of lit texels -
+    the outer feather is fixed in texels, so a span counts a faint fringe as
+    if it were rim."""
+    col = img[:, img.shape[1] // 2, 3]
+    return float(col[: img.shape[0] // 2].sum()) / corner
+
+
+def rims_agree():
+    """Both arts of a shape draw the same rim for their size.
+
+    A rim is part of the edge art and scales with the corner, so if the small
+    art's rim is a bigger share than the big one's, the bigger surface draws
+    the thinner border the moment it crosses to the big art. It shipped that
+    way on both panels and pills until Joe saw it (2026-10-24: "surely at
+    bigger scale those borders would look thicker, not thinner").
+    """
+    for big, small, bc, sc in RIM_PAIRS:
+        b, s = _rim_share(big(), bc), _rim_share(small(), sc)
+        if abs(b - s) > 0.03 * s:
+            sys.exit("%s's rim is %.3f of its corner and %s's %.3f: a surface "
+                     "crossing to the big art would draw a different border"
+                     % (big.__name__, b, small.__name__, s))
+
+
 def main():
     dial_sweeps_agree()
+    rims_agree()
     out = sys.argv[1] if len(sys.argv) > 1 else os.path.join(
         os.path.dirname(os.path.dirname(os.path.abspath(__file__))), "Media", "Textures")
     os.makedirs(out, exist_ok=True)
