@@ -655,12 +655,11 @@ Glass.PANEL_ART_MIN = 16
 --  gap cannot clear it everywhere. A header rule stopping W.RULE_GAP short still
 --  ran into the rim of the options window and the quest log (Joe, 2026-10-12),
 --  and at a bigger corner it reaches further in. Measured from the art, the last
---  texel with alpha over 2% along a side: 18 of Glass-Panel-Even-Edge's 64, 5
+--  texel with alpha over 2% along a side: 14 of Glass-Panel-Even-Edge's 64, 5
 --  of Glass-Panel-Small-Edge's 16. Re-run tools/generate_textures.py and
---  re-measure if the rim changes. (They look the same thickness - the
---  generator's rims_agree holds their coverage equal - but the big one's
---  faint inner tail reaches further.)
-local RIM_DEPTH = { big = 18 / 64, small = 5 / 16 }
+--  re-measure if the rim changes. (The two differ only by the margin, which
+--  is two texels of each: the lit band is 3/16 of the corner in both.)
+local RIM_DEPTH = { big = 14 / 64, small = 5 / 16 }
 
 function Glass.RimDepth(f)
 	if not f or not f._kind then return 0 end
