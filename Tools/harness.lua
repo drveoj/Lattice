@@ -36911,6 +36911,48 @@ section("raid frames: the weave", function()
 	fire("GROUP_ROSTER_UPDATE")
 end)
 
+section("raid frames: the Options page's preview", function()
+	-- PHASE 6 (README, "Options > Raid page"): ten cells and the pins in the
+	-- page's strip, by the settings as they stand, from the real pieces.
+	local RF = A:GetModule("raidframes")
+	local rc = A.Config:Module("raidframes")
+	local keep = { rc.pinTanks, rc.pinHealers, rc.columns, rc.cellSize }
+	rc.pinTanks, rc.pinHealers, rc.columns, rc.cellSize = true, false, false, "auto"
+	local OW = OpenMap("raidframes")
+	local pv = OW.frame.pageFrame.preview
+	local R = pv.raid
+	check(OW.page and OW.page.key == "raidframes" and pv:IsShown() and R and R:IsShown(),
+		"the Raid page has its preview strip, the raid drawn in it")
+	check(#R.cells == 10 and R.cells[1].dressed and R.cells[1].name:GetText() ~= ""
+		and not R.cells[1].auras and (not pv.player or not pv.player:IsShown()),
+		"ten real cells, dressed but with no live auras, and not the unit frames' preview")
+	check(R.pins[1]:IsShown() and not R.pins[2]:IsShown() and R.pins[1].name:GetText() == R.cells[1].name:GetText(),
+		"the tank pinned, as the settings ask, as a real capsule")
+	check(R.fit > 0 and R.fit <= 1 and R:GetHeight() * R.fit <= 130,
+		"fitted to the strip, never larger than life (" .. tostring(R.fit) .. ")")
+	check(R.cells[7].strike:IsShown() and R.cells[4].low:GetText() == "31"
+		and math.abs(R.cells[5]:GetAlpha() - 0.45) < 1e-6,
+		"the made-up raid shows a dead member, a low one and one out of range")
+
+	-- THE SETTINGS, LIVE: columns, healers pinned, a size held.
+	rc.columns, rc.pinHealers, rc.cellSize = true, true, "40"
+	OW:PaintPage()
+	local _, _, _, c1x = R.cells[1]:GetPoint(1)
+	local _, _, _, c6x = R.cells[6]:GetPoint(1)
+	check(R.pins[2]:IsShown() and R.cells[1].__w == 60 and c6x > c1x
+		and select(5, R.cells[2]:GetPoint(1)) < select(5, R.cells[1]:GetPoint(1)),
+		"change the settings and the preview follows: columns, the healer pinned, the 40-man cell")
+
+	-- AND THE UNIT FRAMES' PAGE has its own back.
+	OW:ShowPage(OW:Page("unitframes"))
+	check(not R:IsShown() and pv.player and pv.player:IsShown(),
+		"on Unit frames the strip shows the player and target again")
+
+	A.Options:Close()
+	OW:Finish()
+	rc.pinTanks, rc.pinHealers, rc.columns, rc.cellSize = keep[1], keep[2], keep[3], keep[4]
+end)
+
 section("threat: one place decides which tier a unit is in", function()
 	local TH = A:GetModule("threat")
 	check(TH ~= nil and TH.enabled, "the threat engine is on")

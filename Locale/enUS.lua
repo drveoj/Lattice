@@ -1422,6 +1422,9 @@ L["options.raid_frames.range_fade.desc"] =
 L["options.raid_frames.raid_marks.name"] = "Raid marks on the class dot"
 L["options.raid_frames.raid_marks.desc"] =
 	"A member with a raid mark shows the mark in place of the class dot."
+-- Made-up raid members for the Raid page's preview, comma separated, ten.
+L["options.raid_frames.preview_names"] =
+	"Brumgarr,Tanaquil,Yevenna,Palabras,Kordath,Elisande,Grimbo,Sorrel,Vexa,Watermule"
 L["raid.pin"] = "Pin above the raid"
 L["raid.unpin"] = "Unpin"
 L["raid.pinned"] = "Pinned"

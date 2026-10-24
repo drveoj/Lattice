@@ -923,6 +923,12 @@ end
 function Palette:ClassColor(unit)
 	if not unit or not UnitExists(unit) or not UnitIsPlayer(unit) then return nil end
 	local _, class = UnitClass(unit)
+	return self:ClassColorOf(class)
+end
+
+--- A class's colour by its token (WARRIOR), for something with no unit to
+--  ask - the Raid page's preview of a made-up raid.
+function Palette:ClassColorOf(class)
 	if type(class) ~= "string" then return nil end
 	local colors = _G.CUSTOM_CLASS_COLORS or _G.RAID_CLASS_COLORS
 	local cc = colors and colors[class]

@@ -89,7 +89,7 @@ OW.PAGES = {
 		groups = { "partyframes" }, unlock = { "party" },
 		title = L.options.map.partyframes.title, desc = L.options.map.partyframes.desc },
 	{ key = "raidframes", form = "square", tint = "friendly", module = "raidframes",
-		groups = { "raidframes" }, unlock = { "raid" },
+		groups = { "raidframes" }, unlock = { "raid" }, preview = "raid",
 		title = L.options.map.raidframes.title, desc = L.options.map.raidframes.desc },
 	{ key = "chat", form = "square", module = "chat", groups = { "chat" }, unlock = { "chat" },
 		title = L.options.map.chat.title, desc = L.options.map.chat.desc },
@@ -1164,9 +1164,30 @@ local function BuildPreview(pv)
 	pv.cast = Line(pv)
 end
 
+--- The strip's own glass and tag, whatever it holds.
+local function StyleStrip(pv)
+	local a = Palette.c.accent
+	pv:SetFillColor({ 0, 0, 0, 0.25 })
+	pv:SetEdgeColor({ a[1], a[2], a[3], 0.18 })
+	W.Color(pv.tag, { a[1], a[2], a[3], 0.5 })
+end
+
+local UNIT_PREVIEW = { "player", "target", "lane1", "lane2", "cast" }
+
 function OW:PaintPreview()
 	local pv = self.frame.pageFrame.preview
+	-- THE RAID PAGE'S is the raid module's own (raid build phase 6): ten
+	-- cells and the pins, by the settings, in this same strip.
+	local RFm = A:GetModule("raidframes")
+	if self.page and self.page.preview == "raid" then
+		for _, k in ipairs(UNIT_PREVIEW) do if pv[k] then pv[k]:Hide() end end
+		if RFm then RFm:PaintPreview(pv, 14, 30, (pv:GetWidth() or 900) - 28, PREVIEW_H - 40) end
+		StyleStrip(pv)
+		return
+	end
+	if RFm then RFm:HidePreview(pv) end
 	if not pv.player then BuildPreview(pv) end
+	for _, k in ipairs(UNIT_PREVIEW) do pv[k]:Show() end
 	local c = Palette.c
 	local cfg = A.Config:Module("unitframes")
 	local a = c.accent
@@ -1223,9 +1244,7 @@ function OW:PaintPreview()
 	pv.cast:SetEndPoint("TOPLEFT", pv, cx + 20, -(cy - 3))
 	pv.cast:SetThickness(4)
 	pv.cast:SetColorTexture(ca[1], ca[2], ca[3], 1)
-	pv:SetFillColor({ 0, 0, 0, 0.25 })
-	pv:SetEdgeColor({ a[1], a[2], a[3], 0.18 })
-	W.Color(pv.tag, { a[1], a[2], a[3], 0.5 })
+	StyleStrip(pv)
 end
 
 --- The view for one sub-page, built the first time it is shown.

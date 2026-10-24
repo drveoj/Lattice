@@ -241,7 +241,9 @@ end
 
 local UpdateCell
 
-local function DressCell(cell)
+--- `still`: a cell for the Raid page's preview, which shows no live auras -
+--  and on Forever each container group builds ten buttons, about 5 ms apiece.
+local function DressCell(cell, still)
 	if cell.dressed then return end
 	cell.dressed = true
 
@@ -309,7 +311,7 @@ local function DressCell(cell)
 	sel:Hide()
 	cell.sel = sel
 
-	BuildIcons(cell)
+	if not still then BuildIcons(cell) end
 
 	-- Hover: the rim at accent 60%, unless threat already owns it.
 	cell:HookScript("OnEnter", function(self)
@@ -1236,6 +1238,234 @@ function RF:Layout()
 	for _, cell in ipairs(self:Cells()) do UpdateCell(cell) end
 	for _, pin in ipairs(self:Pins()) do UpdatePin(pin) end
 	if IsInRaid and IsInRaid() then self:RememberCells() end
+end
+
+-- ---------------------------------------------------------------------------
+-- the preview (Options > Raid; raid build phase 6)
+--
+-- Ten cells and the pins, laid out by the settings as they stand (README,
+-- "Options > Raid page"), out of the real pieces: cells dressed as the
+-- weave's are, pins as the party capsule. Filled from a made-up raid rather
+-- than units, so it shows on any character, in a raid or out.
+-- ---------------------------------------------------------------------------
+
+local SAMPLE = {
+	{ class = "WARRIOR", hp = 1,    tank = true },
+	{ class = "PRIEST",  hp = 0.82, healer = true },
+	{ class = "MAGE",    hp = 1 },
+	{ class = "ROGUE",   hp = 0.31 },
+	{ class = "HUNTER",  hp = 0.9,  far = true },
+	{ class = "DRUID",   hp = 0.64, mark = 8 },
+	{ class = "WARLOCK", hp = 0,    dead = true },
+	{ class = "PALADIN", hp = 1 },
+	{ class = "SHAMAN",  hp = 0.55 },
+	{ class = "MAGE",    hp = 1 },
+}
+
+local function SampleNames()
+	local out = {}
+	for n in tostring(L.options.raid_frames.preview_names):gmatch("[^,]+") do out[#out + 1] = n end
+	return out
+end
+
+--- One made-up member on a preview cell, as UpdateCell draws a real one.
+local function PaintSample(cell, s, name, d, view)
+	local ink = Palette:ClassColorOf(s.class) or Palette.c.textDim
+	cell.dot:SetVertexColor(ink[1], ink[2], ink[3], 1)
+	cell.name:SetText(name)
+	local letter = not d.dense and (s.tank and "T" or s.healer and "H") or nil
+	cell.role:SetText(letter or "")
+	local tagW = letter and ((W.StringWidth(cell.role) or 8) + 3) or 0
+	cell.name:SetWidth(math.max(10, (cell.nameRoom or 60) - tagW))
+	local marked = view.marks and s.mark and W.SetMarkIcon(cell.mark, s.mark)
+	cell.mark:SetShown(marked and true or false)
+	cell.dot:SetShown(not marked)
+	cell.fill:SetShown(not s.dead)
+	cell.strike:SetShown(s.dead and true or false)
+	cell.name:SetAlpha(s.dead and 0.4 or 1)
+	cell.fill:SetMinMaxValues(0, 1)
+	cell.fill:SetValue(s.hp)
+	local fc = s.hp < LOW and CORAL or GREEN
+	cell.fill:GetStatusBarTexture():SetVertexColor(fc[1], fc[2], fc[3], fc[4])
+	cell.low:SetText((not s.dead and s.hp < LOW) and tostring(math.floor(s.hp * 100)) or "")
+	cell:SetAlpha((s.far and view.fade) and 0.45 or 1)
+	cell:ApplySkin("glass", "glassEdge")
+end
+
+--- One made-up member on a preview pin, as the party capsule draws a real one.
+local function PaintSamplePin(pin, s, name)
+	local c = Palette.c
+	pin.glass:Show()
+	pin.name:SetText(name)
+	pin.class:SetText((_G.LOCALIZED_CLASS_NAMES_MALE or {})[s.class] or "")
+	pin.pip:SetLabel("60")
+	pin.pip:SetColors(Palette:ChipColors(Palette:ClassColorOf(s.class) or c.accent))
+	pin.health:SetMinMaxValues(0, 1)
+	pin.health:SetValueNow(s.hp)
+	-- As Palette:HealthColor colours a player: their class, flat, unless
+	-- class-coloured health is off.
+	local classHealth = not A.db or A.db.profile.classColorHealth ~= false
+	pin.health:SetColors((classHealth and Palette:ClassColorOf(s.class)) or c.health)
+	pin.power:SetMinMaxValues(0, 1)
+	pin.power:SetValueNow(0.7)
+	pin.power:SetColors(c.power)
+	pin.hpText:SetText("")
+	pin.mpText:SetText("")
+	pin.deadText:Hide()
+	for _, k in ipairs({ "crown", "marker", "pvp", "role" }) do
+		if pin[k] then pin[k]:Hide() end
+	end
+end
+
+--- Build the preview into `strip`, once.
+function RF:BuildPreview(strip)
+	local pv = CreateFrame("Frame", nil, strip)
+	pv.cells, pv.pins, pv.labels = {}, {}, {}
+	for i = 1, #SAMPLE do
+		local cell = CreateFrame("Button", nil, pv)
+		DressCell(cell, true)
+		cell:EnableMouse(false)
+		pv.cells[i] = cell
+	end
+	for i = 1, 2 do
+		local pin = CreateFrame("Button", nil, pv)
+		PartyModule().BuildCapsule(nil, pin)
+		pin:EnableMouse(false)
+		pv.pins[i] = pin
+		local label = W.Text(pv, "unitName", "LEFT")
+		W.Color(label, Palette.c.accent)
+		label:SetAlpha(0.5)
+		pv.labels[i] = label
+	end
+	pv.pinLabel = W.Text(pv, "label", "LEFT")
+	W.Color(pv.pinLabel, Palette.c.accent)
+	pv.pinLabel:SetAlpha(0.55)
+	pv.bond = {}
+	for _, k in ipairs({ "strand", "stub", "weaveStub" }) do
+		pv.bond[k] = pv:CreateTexture(nil, "BACKGROUND")
+		pv.bond[k]:SetTexture(Media.texture.flat)
+	end
+	pv.bond.root = pv:CreateTexture(nil, "ARTWORK")
+	pv.bond.root:SetTexture(Media.texture.chipDisc)
+	pv.bond.root:SetSize(ROOT, ROOT)
+	strip.raid = pv
+	return pv
+end
+
+--- Lay the preview out by the settings as they stand, and fit it to the
+--  strip: `w` by `h` of room, from `x`, `y` (the strip's top left).
+function RF:PaintPreview(strip, x, y, w, h)
+	local pv = strip.raid or self:BuildPreview(strip)
+	pv:Show()
+	local view = ViewFrom(cfg())
+	local d = DensityFor(view.density or #SAMPLE)
+	local g = Gaps(d)
+	local names = SampleNames()
+	local a = Palette.c.accent
+
+	-- The pins: the tank, the healer, as the settings ask.
+	local pinned = {}
+	if view.pins.tanks then pinned[#pinned + 1] = 1 end
+	if view.pins.healers then pinned[#pinned + 1] = 2 end
+	local top, pinsY = 0, nil
+	pv.pinLabel:SetShown(pinned[1] ~= nil or view.pins.boss)
+	pv.pinLabel:SetText(PinRule(view))
+	pv.pinLabel:ClearAllPoints()
+	pv.pinLabel:SetPoint("TOPLEFT", pv, "TOPLEFT", BOND, 0)
+	local pH = A.Config:Module("partyframes").height
+	local k = PIN_H / pH
+	local pw = PIN_W[math.max(1, #pinned)]
+	for i, pin in ipairs(pv.pins) do
+		local idx = pinned[i]
+		pin:SetShown(idx ~= nil)
+		if idx then
+			pin:SetScale(k)
+			pin:SetSize(pw / k, pH)
+			PartyModule().LayCapsule(pin, pw / k)
+			pin:ClearAllPoints()
+			pin:SetPoint("TOPLEFT", pv, "TOPLEFT",
+				(BOND + (i - 1) * (pw + PIN_GAP)) / k, -(PIN_LABEL_H + PIN_LABEL_GAP) / k)
+			PaintSamplePin(pin, SAMPLE[idx], names[idx] or "")
+		end
+	end
+	if pv.pinLabel:IsShown() then
+		pinsY = PIN_LABEL_H + PIN_LABEL_GAP + PIN_H / 2
+		top = PIN_LABEL_H + PIN_LABEL_GAP + PIN_H + PIN_TO_WEAVE
+	end
+
+	-- Two groups of five, as rows or columns.
+	local first, last, width, height
+	for i, cell in ipairs(pv.cells) do
+		LayoutCell(cell, d)
+		local grp, slot = math.floor((i - 1) / PER_GROUP), (i - 1) % PER_GROUP
+		cell:ClearAllPoints()
+		if view.columns then
+			cell:SetPoint("TOPLEFT", pv, "TOPLEFT", BOND + grp * (d.w + g.group),
+				-(top + COL_NUMBER_H + COL_NUMBER_GAP + slot * (d.h + g.cell)))
+		else
+			cell:SetPoint("TOPLEFT", pv, "TOPLEFT", ROWS_X + slot * (d.w + g.cell),
+				-(top + grp * (d.h + g.group)))
+		end
+		PaintSample(cell, SAMPLE[i], names[i] or "", d, view)
+	end
+	for i, label in ipairs(pv.labels) do
+		label:SetText(tostring(i))
+		Media:SetFont(label, "unitName", d.font - 2)
+		label:ClearAllPoints()
+		if view.columns then
+			label:SetJustifyH("CENTER")
+			label:SetWidth(d.w)
+			label:SetPoint("TOP", pv, "TOPLEFT", BOND + (i - 1) * (d.w + g.group) + d.w / 2, -top)
+		else
+			label:SetJustifyH("LEFT")
+			label:SetWidth(NUMBER)
+			label:SetPoint("LEFT", pv, "TOPLEFT", BOND, -(top + (i - 1) * (d.h + g.group) + d.h / 2))
+		end
+	end
+	if view.columns then
+		first = top + COL_NUMBER_H / 2
+		last = top + COL_NUMBER_H + COL_NUMBER_GAP + PER_GROUP * (d.h + g.cell) - g.cell
+		width = BOND + 2 * d.w + g.group
+		height = last
+	else
+		first = top + d.h / 2
+		last = top + d.h + g.group + d.h / 2
+		width = ROWS_X + PER_GROUP * d.w + (PER_GROUP - 1) * g.cell
+		height = top + 2 * d.h + g.group
+	end
+	if pinned[1] then width = math.max(width, BOND + #pinned * pw + (#pinned - 1) * PIN_GAP) end
+
+	-- The bond, as LayBond draws the weave's.
+	local b, rootY = pv.bond, pinsY or first
+	W.Tint(b.strand, a, 0.45)
+	W.Tint(b.stub, a, 0.45)
+	W.Tint(b.root, a, 1)
+	W.Tint(b.weaveStub, a, 0.3)
+	b.root:ClearAllPoints()
+	b.root:SetPoint("CENTER", pv, "TOPLEFT", 0, -rootY)
+	b.stub:ClearAllPoints()
+	b.stub:SetPoint("LEFT", pv, "TOPLEFT", 0, -rootY)
+	b.stub:SetSize(BOND, 1.5)
+	b.weaveStub:ClearAllPoints()
+	b.weaveStub:SetPoint("LEFT", pv, "TOPLEFT", 0, -first)
+	b.weaveStub:SetSize(BOND, 1)
+	b.weaveStub:SetShown(pinsY ~= nil)
+	b.strand:ClearAllPoints()
+	b.strand:SetPoint("TOP", pv, "TOPLEFT", 0, -rootY)
+	b.strand:SetSize(1.5, math.max(0.01, last - rootY))
+
+	-- Fitted to the room it has, never larger than life.
+	local s = math.min(1, w / width, h / height)
+	pv:SetScale(s)
+	pv:SetSize(width, height)
+	pv:ClearAllPoints()
+	pv:SetPoint("TOPLEFT", strip, "TOPLEFT", (x + (w - width * s) / 2) / s, -y / s)
+	pv.fit = s
+	return pv
+end
+
+function RF:HidePreview(strip)
+	if strip.raid then strip.raid:Hide() end
 end
 
 -- ---------------------------------------------------------------------------
