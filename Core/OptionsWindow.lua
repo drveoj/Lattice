@@ -88,6 +88,9 @@ OW.PAGES = {
 	{ key = "partyframes", form = "pill", tint = "friendly", module = "partyframes",
 		groups = { "partyframes" }, unlock = { "party" },
 		title = L.options.map.partyframes.title, desc = L.options.map.partyframes.desc },
+	{ key = "raidframes", form = "square", tint = "friendly", module = "raidframes",
+		groups = { "raidframes" }, unlock = { "raid" },
+		title = L.options.map.raidframes.title, desc = L.options.map.raidframes.desc },
 	{ key = "chat", form = "square", module = "chat", groups = { "chat" }, unlock = { "chat" },
 		title = L.options.map.chat.title, desc = L.options.map.chat.desc },
 	{ key = "bags", form = "square", module = "bags", groups = { "bags" },
@@ -310,8 +313,15 @@ function OW:Spec()
 
 	add({ key = "nameplates", page = "nameplates", label = L.options.map.nameplates.title,
 		form = "pill", tint = "danger", w = 104, h = 26, hop = 2, at = { 0.5, 0.7 } })
-	add({ key = "party", page = "partyframes", label = L.options.map.partyframes.title,
-		form = "pill", tint = "friendly", w = 80, h = 26, hop = 3, mover = "party", at = { 0.12, 0.6 } })
+	-- In a raid the weave is the group, at its own place, and the Party node
+	-- gives way to it, as the capsules do (raid handoff, Options).
+	if IsInRaid and IsInRaid() then
+		add({ key = "raid", page = "raidframes", label = L.options.map.raidframes.title,
+			form = "square", tint = "friendly", w = 80, h = 26, hop = 3, mover = "raid", at = { 0.12, 0.6 } })
+	else
+		add({ key = "party", page = "partyframes", label = L.options.map.partyframes.title,
+			form = "pill", tint = "friendly", w = 80, h = 26, hop = 3, mover = "party", at = { 0.12, 0.6 } })
+	end
 	add({ key = "chat", page = "chat", label = L.options.map.chat.title,
 		form = "square", w = 80, h = 26, hop = 3, mover = "chat", at = { 0.1, 0.12 } })
 	add({ key = "bags", page = "bags", label = L.options.map.bags.title,

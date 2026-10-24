@@ -1,9 +1,15 @@
 --[[--------------------------------------------------------------------------
 	Lattice :: Raid frames - the weave
 
-	Phase 1 of the raid build (sara-vault: "Lattice Raid Frames Build Plan"):
-	every member of the raid as a cell, in one look. No pins, no lenses, no
-	bond yet - those are phases 2 to 4.
+	Phases 1 and 2 of the raid build (sara-vault: "Lattice Raid Frames Build
+	Plan"): every member of the raid as a cell, in one look, hung off its group
+	bond and bonded to the player. No pins or lenses yet - phases 3 and 4.
+
+	THE GROUP BOND (Raid.dc.html 13b-13d): a strand down the weave's left edge,
+	a root node at its top, a stub across the gutter to the first row, and the
+	group numbers on the bond side of each row. The weave grows away from it:
+	rows extend right. It is plain textures on the weave, so a fight does not
+	stop it being drawn - only the rows it measures wait.
 
 	EIGHT HEADERS, ONE PER GROUP. Each is the client's SecureGroupHeaderTemplate
 	filtered to one group of five, laid out as a row. Clicking a cell targets
@@ -73,9 +79,12 @@ local function Gaps(d)
 	}
 end
 
--- The group numbers sit in a gutter on the bond side. The bond itself is
--- phase 2; the gutter is here so nothing moves when it arrives.
-local GUTTER = 22
+-- The bond, as the design draws it: the strand at the weave's left edge, the
+-- rows 50 in, each opening with its group number in a 14-wide slot.
+local BOND = 50
+local NUMBER, NUMBER_GAP = 14, 5
+local ROWS_X = BOND + NUMBER + NUMBER_GAP
+local ROOT = 8   -- the root node, r = 4
 
 local ICON = 12   -- a dispellable debuff, the client's own icon
 local ICONS = 3
@@ -436,12 +445,50 @@ function RF:Build()
 		self.headers[g] = h
 
 		-- The group number: accent at 50%, the token through W.Color.
-		local label = W.Text(weave, "unitName", "RIGHT")
+		local label = W.Text(weave, "unitName", "LEFT")
 		label:SetText(tostring(g))
 		W.Color(label, Palette.c.accent)
 		label:SetAlpha(0.5)
 		self.labels[g] = label
 	end
+
+	-- The bond: accent at 45% for the strand and its stub, 100% for the root.
+	local bond = {}
+	bond.strand = weave:CreateTexture(nil, "BACKGROUND")
+	bond.strand:SetTexture(Media.texture.flat)
+	bond.strand:SetWidth(1.5)
+	bond.stub = weave:CreateTexture(nil, "BACKGROUND")
+	bond.stub:SetTexture(Media.texture.flat)
+	bond.stub:SetHeight(1.5)
+	bond.root = weave:CreateTexture(nil, "ARTWORK")
+	bond.root:SetTexture(Media.texture.chipDisc)
+	bond.root:SetSize(ROOT, ROOT)
+	-- The strand's foot: where the bond to the player leaves it in unlock.
+	bond.foot = CreateFrame("Frame", nil, weave)
+	bond.foot:SetSize(1, 1)
+	self.bond = bond
+end
+
+--- Lay the bond along the rows: the root and the stub on the first row's
+--  centre line, the strand down to the last's. `first` and `last` are those
+--  centres, measured down from the weave's top.
+function RF:LayBond(first, last)
+	local b, a = self.bond, Palette.c.accent
+	W.Tint(b.strand, a, 0.45)
+	W.Tint(b.stub, a, 0.45)
+	W.Tint(b.root, a, 1)
+
+	b.root:ClearAllPoints()
+	b.root:SetPoint("CENTER", self.weave, "TOPLEFT", 0, -first)
+	b.stub:ClearAllPoints()
+	b.stub:SetPoint("LEFT", self.weave, "TOPLEFT", 0, -first)
+	b.stub:SetWidth(BOND)
+	b.strand:ClearAllPoints()
+	b.strand:SetPoint("TOP", self.weave, "TOPLEFT", 0, -first)
+	b.strand:SetHeight(math.max(0.01, last - first))
+	b.strand:SetShown(last > first)
+	b.foot:ClearAllPoints()
+	b.foot:SetPoint("CENTER", self.weave, "TOPLEFT", 0, -last)
 end
 
 --- Make every cell now, out of combat: see the note at the top.
@@ -492,7 +539,7 @@ function RF:Layout()
 	end
 
 	local y = 0
-	local shown = 0
+	local first, last
 	for gi, h in ipairs(self.headers) do
 		h:SetAttribute("cellW", d.w)
 		h:SetAttribute("cellH", d.h)
@@ -504,26 +551,30 @@ function RF:Layout()
 			end
 		end
 		h:ClearAllPoints()
-		h:SetPoint("TOPLEFT", self.weave, "TOPLEFT", GUTTER, -y)
+		h:SetPoint("TOPLEFT", self.weave, "TOPLEFT", ROWS_X, -y)
 		-- Any attribute set while shown re-lays the header out.
 		h:SetAttribute("xOffset", g.cell)
 
 		local label = self.labels[gi]
 		label:ClearAllPoints()
-		label:SetPoint("RIGHT", self.weave, "TOPLEFT", GUTTER - 6, -y - d.h / 2)
+		label:SetPoint("LEFT", self.weave, "TOPLEFT", BOND, -y - d.h / 2)
+		label:SetWidth(NUMBER)
 		Media:SetFont(label, "unitName", d.font - 2)
 		label._aetherSize = d.font - 2
 		label:SetShown(used[gi] == true)
 
 		if used[gi] then
+			first = first or (y + d.h / 2)
+			last = y + d.h / 2
 			y = y + d.h + g.group
-			shown = shown + 1
 		end
 	end
 
-	local width = GUTTER + PER_GROUP * d.w + (PER_GROUP - 1) * g.cell
+	local width = ROWS_X + PER_GROUP * d.w + (PER_GROUP - 1) * g.cell
 	local height = math.max(d.h, y - g.group)
 	self.weave:SetSize(width, height)
+	-- No one in a group yet (out of a raid): the bond on the first row.
+	self:LayBond(first or d.h / 2, last or d.h / 2)
 
 	for _, cell in ipairs(self:Cells()) do UpdateCell(cell) end
 end
@@ -535,8 +586,13 @@ end
 function RF:RegisterMovers()
 	-- Clear of the Toolbox trunk's stubs and labels on the left edge (they
 	-- run out to about 170), where the party stack sits for the same reason.
+	-- Bonded to the player (13b: "the weave bonds to the player capsule"), so
+	-- it goes where the player goes. In unlock that bond is dashed, from the
+	-- strand's foot, and the root node is where the handle's junction sits.
 	A.Movers:Register("raid", self.weave,
-		{ point = "TOPLEFT", relPoint = "TOPLEFT", x = 190, y = -220 }, L.movers.name.raid)
+		{ point = "TOPLEFT", relPoint = "TOPLEFT", x = 190, y = -220 }, L.movers.name.raid,
+		{ parent = "player", bondStyle = "dashed", bondFrom = self.bond.foot,
+			junctionAt = self.bond.root })
 end
 
 local rangeClock = 0

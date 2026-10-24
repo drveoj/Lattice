@@ -36210,6 +36210,69 @@ section("raid frames: the weave", function()
 	check(RF.headers[1]:GetAttribute("child2").role:GetText() == "",
 		"and DPS carry no tag")
 
+	-- PHASE 2, THE GROUP BOND (Raid.dc.html 13b-13d). Three rows at 20-man
+	-- density: 30 high, 5 between groups, so the centres are 15, 50 and 85.
+	local B = RF.bond
+	local function at(r) local _, _, _, x, y = r:GetPoint(1) return x, y end
+	local rx, ry = at(B.root)
+	check(rx == 0 and ry == -15, "the root node sits on the strand at the first row's centre ("
+		.. tostring(rx) .. ", " .. tostring(ry) .. ")")
+	local _, sy = at(B.strand)
+	check(sy == -15 and B.strand:GetHeight() == 70 and B.strand:IsShown(),
+		"the strand runs from the first row down to the last (" .. tostring(B.strand:GetHeight()) .. ")")
+	check(B.stub:GetWidth() == 50, "a stub crosses the 50 gutter to the first row")
+	local hx = select(4, RF.headers[1]:GetPoint(1))
+	local lx = select(4, RF.labels[1]:GetPoint(1))
+	check(lx == 50 and hx == 69,
+		"each row opens with its group number at the gutter's end, then the cells ("
+		.. tostring(lx) .. ", " .. tostring(hx) .. ")")
+	local _, fy = at(B.foot)
+	check(fy == -85, "the strand's foot is the last row's centre (" .. tostring(fy) .. ")")
+	check(B.strand._aetherTint == "accent" and B.strand._aetherTintAlpha == 0.45
+		and B.root._aetherTintAlpha == 1,
+		"strand and stub in the accent at 45%, the root at full, and a skin change reaches them")
+
+	-- BONDED TO THE PLAYER, so the player carries it.
+	local RM = A.Movers.registry.raid
+	check(RM and RM.parent == "player" and select(2, RF.weave:GetPoint(1)) == A.Movers.registry.player.frame,
+		"the weave hangs from the player capsule")
+	check(A.Layout.KNOWN.raid == true, "and a layout may name it")
+
+	-- IN UNLOCK THAT BOND IS DASHED, from the foot, and the junction is the root.
+	local wasUnlocked = A.Movers.unlocked
+	A.Movers:Unlock(nil, true)
+	local bf = A.Movers.__bonds()
+	local solid = false
+	for _, l in ipairs(bf.lines) do
+		if l:IsShown() and l.child == "raid" then solid = true end
+	end
+	local dashes = 0
+	for _, l in ipairs(bf.dashes) do if l:IsShown() then dashes = dashes + 1 end end
+	check(not solid and dashes > 1 and bf.feet[1]:IsShown(),
+		"unlocked, the raid's bond is dashes from a dot on the strand's foot, not the solid line ("
+		.. dashes .. " dashes)")
+	check(select(2, RM.handle.junction:GetPoint(1)) == B.root,
+		"and the handle's junction sits on the root node")
+	local key = bf.dashKey
+	local pf = A.Movers.registry.player.frame
+	local p1, prel, prp, px, py = pf:GetPoint(1)
+	pf:ClearAllPoints()
+	pf:SetPoint(p1, prel, prp, (px or 0) + 120, py or 0)
+	bf:GetScript("OnUpdate")(bf, 0.016)
+	check(bf.dashKey ~= key, "the dashes follow the player while it is dragged")
+	pf:ClearAllPoints()
+	pf:SetPoint(p1, prel, prp, px, py)
+	bf:GetScript("OnUpdate")(bf, 0.016)
+	if not wasUnlocked then A.Movers:Lock(true) end
+
+	-- THE OPTIONS MAP: in a raid, a Raid node where the Party node was.
+	local OWm = A.OptionsWindow
+	local keys = {}
+	for _, n in ipairs(OWm:Spec()) do keys[n.key] = n end
+	check(keys.raid and not keys.party and keys.raid.mover == "raid"
+		and OWm:Page("raidframes") and OWm:Page("raidframes").unlock[1] == "raid",
+		"in a raid the map shows the Raid node, opening the raid page, and no Party node")
+
 	-- HEALTH: the fill's colour and the low number, by the helpers.
 	_G.__units.raid1.hp = 30
 	fire("UNIT_HEALTH", "raid1")
@@ -36283,6 +36346,9 @@ section("raid frames: the weave", function()
 	wipe(_G.__raidRoster)
 	_G.__resolveStateDrivers()
 	check(not RF.weave:IsShown(), "out of a raid the weave is down")
+	local outKeys = {}
+	for _, n in ipairs(A.OptionsWindow:Spec()) do outKeys[n.key] = true end
+	check(outKeys.party and not outKeys.raid, "and the map has its Party node back")
 
 	UnitGroupRolesAssigned = plainRole
 	for u, d in pairs(saved) do _G.__units[u] = d end

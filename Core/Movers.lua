@@ -692,12 +692,58 @@ Movers.__drawGuide = DrawGuide
 
 local bonds
 
+-- A DASHED BOND (the raid's to the player, 25%, 3 on and 6 off) is short
+-- Lines between two points, and a point between two frames cannot be an
+-- anchor. So its ends are measured, and the dashes laid again whenever an end
+-- has moved - every frame of a drag, nothing while still.
+local function DashEnds(e)
+	local x1, y1 = PointAt(e.bondFrom or e.frame, "CENTER")
+	local x2, y2 = PointAt(ParentFrame(e) or e.frame, "CENTER")
+	if x1 and x2 then return x1, y1, x2, y2 end
+end
+
+--- Where every dashed bond's ends are, as one string to compare.
+local function DashKey()
+	local key = ""
+	for _, e in ipairs(bonds.dashed) do
+		local x1, y1, x2, y2 = DashEnds(e)
+		if x1 then key = key .. ("%.1f,%.1f,%.1f,%.1f;"):format(x1, y1, x2, y2) end
+	end
+	return key
+end
+
+local function LayDashes()
+	local c = A.Palette.c.accent
+	local n, d = 0, 0
+	for _, e in ipairs(bonds.dashed) do
+		local x1, y1, x2, y2 = DashEnds(e)
+		if x1 then
+			n = Movers.Dash(bonds, bonds.dashes, n, x1, y1, x2, y2, c, Px(1),
+				{ alpha = 0.25, dash = Px(3), gap = Px(6) })
+			-- The foot it leaves from, 60%.
+			d = d + 1
+			local dot = bonds.feet[d] or bonds:CreateTexture(nil, "OVERLAY")
+			bonds.feet[d] = dot
+			dot:SetTexture(A.Media.texture.chipDisc)
+			dot:SetSize(Px(6), Px(6))
+			dot:ClearAllPoints()
+			dot:SetPoint("CENTER", UIParent, "BOTTOMLEFT", x1, y1)
+			Tint(dot, c, 0.6)
+			dot:Show()
+		end
+	end
+	for i = n + 1, #bonds.dashes do bonds.dashes[i]:Hide() end
+	for i = d + 1, #bonds.feet do bonds.feet[i]:Hide() end
+	bonds.dashKey = DashKey()
+end
+
 local function DrawBonds()
 	if not bonds then
 		bonds = CreateFrame("Frame", ADDON .. "MoverBonds", UIParent)
 		bonds:SetAllPoints(UIParent)
 		bonds:SetFrameStrata("HIGH")
 		bonds.lines, bonds.nodes = {}, {}
+		bonds.dashes, bonds.feet, bonds.dashed = {}, {}, {}
 	end
 	local c = A.Palette.c.accent
 
@@ -706,9 +752,12 @@ local function DrawBonds()
 	-- screenshot, 2026-10-10: the bars' bonds hanging under a bare spine).
 	local only = Movers.only
 	local n = 0
+	wipe(bonds.dashed)
 	for _, e in pairs(Movers.registry) do
 		local pf = not e.pairLead and not (only and not only[e.name]) and ParentFrame(e)
-		if pf then
+		if pf and e.bondStyle == "dashed" then
+			bonds.dashed[#bonds.dashed + 1] = e
+		elseif pf then
 			n = n + 1
 			local l = bonds.lines[n] or bonds:CreateLine(nil, "ARTWORK")
 			bonds.lines[n] = l
@@ -739,6 +788,11 @@ local function DrawBonds()
 		end
 	end
 	for i = k + 1, #bonds.nodes do bonds.nodes[i]:Hide(); bonds.nodes[i].node = nil end
+
+	LayDashes()
+	bonds:SetScript("OnUpdate", bonds.dashed[1] and function()
+		if DashKey() ~= bonds.dashKey then LayDashes() end
+	end or nil)
 
 	bonds:Show()
 end
@@ -1314,6 +1368,8 @@ local function DressHandle(entry)
 	h:SetFillColor({ c[1], c[2], c[3], 0.06 })
 	h:SetEdgeColor({ c[1], c[2], c[3], 0.8 })
 	h.junction:SetSize(Px(10), Px(10))
+	h.junction:ClearAllPoints()
+	h.junction:SetPoint("CENTER", entry.junctionAt or h, "CENTER", 0, 0)
 	Tint(h.junction, c, 1)
 
 	h.label:SetText(tostring(entry.label or entry.name):upper())
@@ -1456,7 +1512,6 @@ local function CreateHandle(entry)
 
 	h.junction = h:CreateTexture(nil, "OVERLAY")
 	h.junction:SetTexture(A.Media.texture.diamond)
-	h.junction:SetPoint("CENTER", h, "CENTER", 0, 0)
 
 	if entry.reshape then CreateGrip(entry, h) end
 
@@ -1854,6 +1909,11 @@ function Movers:Register(name, frame, default, label, opts)
 	entry.rows = opts and opts.rows or nil
 	entry.reshape = opts and opts.reshape or nil
 	entry.park = opts and opts.park or nil
+	-- The raid's bond to the player: dashed, from the strand's foot rather
+	-- than the frame's centre, and the junction on its root node.
+	entry.bondStyle = opts and opts.bondStyle or nil
+	entry.bondFrom = opts and opts.bondFrom or nil
+	entry.junctionAt = opts and opts.junctionAt or nil
 
 	entry.defaultParent = opts and opts.parent or nil
 	ResolveParent(entry)
