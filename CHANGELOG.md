@@ -1,5 +1,11 @@
 # Lattice
 
+## 2.1.1 - 2026-10-30
+
+- Your buffs no longer fall off the end of the row. Above your player frame they now take rows of eight, two rows by default, so world buffs past the first eight still show. Out of combat up to 16 show; in a fight every row fills.
+- Choose how many rows you get (one to three) and how many buffs show out of combat under Settings > Auras > Buffs.
+- Fixed: right-clicking an empty spot in your buff row could cancel one of your buffs. One gap remains: a spot that empties during a fight can still do it until the fight ends, because the game locks those buttons in combat.
+
 ## 2.1.0 - 2026-10-24
 
 - Raid frames. Everyone in your raid shows as a glass cell, group by group, with their class, name and health, and a number when they drop below 40%. Dead and offline players are struck through, and players out of your spells' range fade.

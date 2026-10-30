@@ -38,6 +38,15 @@ local ADDON, A = ...
 --  rather than showing yesterday's news as today's.
 A.CHANGELOG = {
 	{
+		version = "2.1.1",
+		date    = "2026-10-30",
+		lines   = {
+			"Your buffs no longer fall off the end of the row. Above your player frame they now take rows of eight, two rows by default, so world buffs past the first eight still show. Out of combat up to 16 show; in a fight every row fills.",
+			"Choose how many rows you get (one to three) and how many buffs show out of combat under Settings > Auras > Buffs.",
+			"Fixed: right-clicking an empty spot in your buff row could cancel one of your buffs. One gap remains: a spot that empties during a fight can still do it until the fight ends, because the game locks those buttons in combat.",
+		},
+	},
+	{
 		version = "2.1.0",
 		date    = "2026-10-24",
 		lines   = {
