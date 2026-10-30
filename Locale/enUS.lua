@@ -685,11 +685,18 @@ L["options.auras.desc"] =
 L["options.auras.hide_blizzard.name"] = "Hide Blizzard's buff row"
 L["options.auras.offset.name"] = "Gap from the capsule"
 L["options.auras.only_mine.name"] = "Only mine, on the target"
+L["options.auras.rest_count.desc"] =
+	"How many of your buffs show out of combat. In a fight every row fills."
+L["options.auras.rest_count.name"] = "Your buffs out of combat"
+L["options.auras.rows.desc"] =
+	"Rows of eight above your capsule, for when your buffs run past one row."
+L["options.auras.rows.name"] = "Rows of your buffs"
 L["options.auras.show_count.name"] = "Show stack counts"
 L["options.auras.show_time.name"] = "Show timers"
 L["options.auras.square_note"] =
 	"Squares, three to a row at rest and up to eight in a fight, starting "
-		.. "where the bars start. Your debuffs on the target are edged and come "
+		.. "where the bars start; your own buffs take the rows set below. Your "
+		.. "debuffs on the target are edged and come "
 		.. "first; everyone else's are dimmed. A debuff you can dispel off "
 		.. "yourself is edged red. Right-click one of your own buffs to cancel it."
 L["options.auras.takes_weapon_enchant_icons"] =

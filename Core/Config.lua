@@ -418,7 +418,8 @@ Config.defaults = {
 				hideBlizzard = true,
 
 				-- The handoff's squares, on both clients: their size and counts
-				-- are the design's (Modules/Auras.lua), not settings.
+				-- are the design's (Modules/Auras.lua), not settings - except
+				-- your own buffs' rows, under buffs.
 				offset    = 6,     -- capsule edge -> the row
 				showTime  = true,
 				showCount = true,
@@ -428,6 +429,10 @@ Config.defaults = {
 					player  = true,
 					target  = true,
 					focus   = true,   -- WoW Forever only
+					-- Your own buffs only: rows of eight (1-3), and how many
+					-- show out of combat. A raider's world buffs run past eight.
+					rows      = 2,
+					restCount = 16,
 				},
 				debuffs = {
 					enabled = true,

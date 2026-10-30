@@ -14844,7 +14844,7 @@ local TB, TD = AU.targetBuffs, AU.targetDebuffs
 
 if TILES then
 check(#AU.trays == 4, "four trays: buffs and debuffs, player and target")
-check(PB.active == 3, "three of the four player buffs at rest (got " .. PB.active .. ")")
+check(PB.active == 4, "all four player buffs at rest (got " .. PB.active .. ")")
 check(PD.active == 2, "two player debuffs (got " .. PD.active .. ")")
 check(TB.active == 2, "target buffs are shown at all now (got " .. TB.active .. ")")
 check(TD.active == 3,
@@ -15338,12 +15338,20 @@ section("WoW Forever: aura trays the game fills", function()
 
 	-- rest and combat: a shorter line in the same host; nothing of ours moves
 	local function cap(t) return t.container.__flow.lineSize end
-	local hostW = PBt.host:GetWidth()
-	check(cap(PBt) == 3 * 28 - 4 and tg[1].max == 3, "three to a row at rest")
+	local hostW, hostH = PBt.host:GetWidth(), PBt.host:GetHeight()
+	local bg = PBt.container.__groupOrder[1]
+	check(cap(TDt) == 3 * 28 - 4 and tg[1].max == 3, "three to a row at rest")
+	-- Your own buffs: two rows of eight by default, all sixteen at rest.
+	check(cap(PBt) == 8 * 28 - 4 and bg.max == 16,
+		"your buffs: lines of eight, sixteen at rest (" .. tostring(bg.max) .. ")")
+	check(hostH == 24 + 24 + 36 and bg.opts.layout.lineSpacing == 12,
+		"the host is cut to two rows, a row apart (" .. hostH .. ")")
 	_G.__inCombat = true
 	fire("PLAYER_REGEN_DISABLED")
-	check(cap(PBt) == 8 * 28 - 4 and tg[1].max == 8, "up to eight in a fight")
-	check(PBt.host:GetWidth() == hostW, "and the host did not resize to do it")
+	check(cap(TDt) == 8 * 28 - 4 and tg[1].max == 8, "up to eight in a fight")
+	check(cap(PBt) == 8 * 28 - 4 and bg.max == 16, "your buffs fill both rows")
+	check(PBt.host:GetWidth() == hostW and PBt.host:GetHeight() == hostH,
+		"and the host did not resize to do it")
 
 	-- the skin changes mid-fight while auras are secret: wait, do not fight it
 	_G.__aurasRestricted = true
@@ -15354,8 +15362,20 @@ section("WoW Forever: aura trays the game fills", function()
 	fire("PLAYER_REGEN_ENABLED")
 	check(not F.restylePending and near(plate(mine), A.Palette.c.accent),
 		"and lands when the fight ends, in the new skin's accent")
-	check(cap(PBt) == 3 * 28 - 4, "and the rows go back to three")
+	check(cap(TDt) == 3 * 28 - 4, "and the rows go back to three")
 	A.db.profile.skin = "midnight" A:Restyle()
+
+	-- One row, eight at rest, from the options; then back.
+	local bcfg = A.db.profile.modules.auras.buffs
+	bcfg.rows, bcfg.restCount = 1, 8
+	AU:OnConfigChanged()
+	check(PBt.host:GetHeight() == 24 + 24 and bg.max == 8,
+		"one row: the host is one row tall and eight show at rest")
+	bcfg.rows, bcfg.restCount = 1, 20
+	AU:OnConfigChanged()
+	check(bg.max == 8, "a rest count past the rows stops at their last square")
+	bcfg.rows, bcfg.restCount = 2, 16
+	AU:OnConfigChanged()
 
 	-- a new target is not an aura event, so the trays are told
 	local before, mineBefore = tc.__refreshes, c.__refreshes
@@ -15527,20 +15547,51 @@ if TILES then
 	local _, _, _, _, fy = PB.frame:GetPoint(1)
 	check(fy == cfg.offset + 6, "a row above stands clear of its timer tags (" .. tostring(fy) .. ")")
 
-	-- THREE AT REST, EIGHT IN A FIGHT, NEVER A SECOND ROW.
-	local savedB = _G.__auras.player.HELPFUL
+	-- THREE AT REST, EIGHT IN A FIGHT, NEVER A SECOND ROW - on the target.
+	local savedT = _G.__auras.target.HELPFUL
 	local many = {}
-	for i = 1, 10 do many[i] = { "Buff " .. i, 130000 + i, 0, nil, 600, nil, "player", true } end
-	_G.__auras.player.HELPFUL = many
-	fire("UNIT_AURA", "player")
-	check(PB.active == AU.REST, "ten buffs, three shown at rest (" .. PB.active .. ")")
+	for i = 1, 20 do many[i] = { "Buff " .. i, 130000 + i, 0, nil, 600, nil, "player", true } end
+	_G.__auras.target.HELPFUL = many
+	fire("PLAYER_TARGET_CHANGED")
+	check(TB.active == AU.REST, "twenty target buffs, three shown at rest (" .. TB.active .. ")")
 	fire("PLAYER_REGEN_DISABLED")
-	check(PB.active == AU.COMBAT, "eight in a fight (" .. PB.active .. ")")
-	local _, _, _, _, y1 = PB.tiles[1]:GetPoint(1)
-	local _, _, _, _, y8 = PB.tiles[8]:GetPoint(1)
+	check(TB.active == AU.COMBAT, "eight in a fight (" .. TB.active .. ")")
+	local _, _, _, _, y1 = TB.tiles[1]:GetPoint(1)
+	local _, _, _, _, y8 = TB.tiles[8]:GetPoint(1)
 	check(y1 == y8, "in one row")
 	fire("PLAYER_REGEN_ENABLED")
-	check(PB.active == AU.REST, "and three again after")
+	check(TB.active == AU.REST, "and three again after")
+	_G.__auras.target.HELPFUL = savedT
+	fire("PLAYER_TARGET_CHANGED")
+
+	-- YOUR OWN BUFFS: two rows of eight by default, all sixteen at rest - a
+	-- world buff past the eighth was simply not drawn (a report, 2026-10-28).
+	local savedB = _G.__auras.player.HELPFUL
+	_G.__auras.player.HELPFUL = many
+	fire("UNIT_AURA", "player")
+	check(PB.active == 16, "twenty buffs, sixteen shown at rest (" .. PB.active .. ")")
+	local x1, r1 = select(4, PB.tiles[1]:GetPoint(1))
+	local x9, r9 = select(4, PB.tiles[9]:GetPoint(1))
+	check(x9 == x1 and r9 - r1 == 24 + 12,
+		"the ninth starts a second row, straight above the first (" .. tostring(r9) .. ")")
+	fire("PLAYER_REGEN_DISABLED")
+	check(PB.active == 16, "both rows in a fight too")
+	fire("PLAYER_REGEN_ENABLED")
+
+	-- From the options: one row, five at rest; the slots past it park.
+	local bcfg = A.db.profile.modules.auras.buffs
+	bcfg.rows, bcfg.restCount = 1, 5
+	AU:OnConfigChanged()
+	check(PB.active == 5, "one row, five at rest (" .. PB.active .. ")")
+	fire("PLAYER_REGEN_DISABLED")
+	check(PB.active == AU.COMBAT, "and one row of eight in a fight (" .. PB.active .. ")")
+	fire("PLAYER_REGEN_ENABLED")
+	bcfg.rows, bcfg.restCount = 3, 24
+	AU:OnConfigChanged()
+	check(PB.active == 20 and PB.tiles[24] and PB.tiles[24].click,
+		"three rows: all twenty, and every slot built with its cancel button")
+	bcfg.rows, bcfg.restCount = 2, 16
+	AU:OnConfigChanged()
 	_G.__auras.player.HELPFUL = savedB
 	fire("UNIT_AURA", "player")
 end
@@ -15766,6 +15817,53 @@ if TILES then
 		check(_G.__cancelled ~= nil and _G.__cancelled.index == 3,
 			"the tile's own OnMouseUp is the same handler, for when there is no"
 			.. " secure button on top of it")
+	end
+
+	-- A PARKED TILE CANCELS NOTHING. A buff dropping off leaves its square in
+	-- place and invisible, still under the mouse, with the index and macro of
+	-- what it last showed. Once the buffs shift up a slot, that names a buff
+	-- that is alive one square over - right-clicking empty space cancelled it.
+	do
+		local saved = _G.__auras.player.HELPFUL
+		local last = PB.active
+		local gone = PB.tiles[last]
+		local fewer = {}
+		for i = 1, last - 1 do fewer[i] = saved[i] end
+
+		_G.__auras.player.HELPFUL = fewer
+		fire("UNIT_AURA", "player")
+		check(gone._parked and gone.click:GetAttribute("macrotext2") == nil,
+			"a tile parked out of combat has its cancel macro cleared (got "
+			.. tostring(gone.click:GetAttribute("macrotext2")) .. ")")
+		_G.__cancelled = nil
+		gone.click:GetScript("PostClick")(gone.click, "RightButton")
+		check(_G.__cancelled == nil,
+			"and right-clicking where it was cancels nothing")
+		_G.__cancelled = nil
+		gone:GetScript("OnMouseUp")(gone, "RightButton")
+		check(_G.__cancelled == nil, "nor does the tile underneath")
+
+		_G.__auras.player.HELPFUL = saved
+		fire("UNIT_AURA", "player")
+		check(not gone._parked and gone.click:GetAttribute("macrotext2")
+			== "/cancelaura " .. saved[last][1],
+			"a buff back in the slot re-arms it with its own name")
+
+		-- In a fight the attribute can't be written, so the macro stays until the
+		-- fight ends - and is cleared then.
+		_G.__inCombat = true
+		_G.__auras.player.HELPFUL = fewer
+		fire("UNIT_AURA", "player")
+		check(gone._parked and gone.click:GetAttribute("macrotext2")
+			== "/cancelaura " .. saved[last][1],
+			"parked in a fight, the macro is left alone - nothing secure is written")
+		_G.__inCombat = false
+		fire("PLAYER_REGEN_ENABLED")
+		check(gone._parked and gone.click:GetAttribute("macrotext2") == nil,
+			"and the fight ending clears it")
+
+		_G.__auras.player.HELPFUL = saved
+		fire("UNIT_AURA", "player")
 	end
 
 	-- A TILE BUILT IN A FIGHT gets its cancel wiring after it: secure attributes

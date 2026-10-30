@@ -11,8 +11,10 @@
 	A tile is the Lattice handoff's square, on both clients: 24 px with a
 	hairline edge, a timer tag under thirty seconds and a gold stack tag. A
 	row starts where the capsule's bars start and grows toward the other
-	capsule; three at rest, eight in a fight, never a second row. Your
-	debuffs on the target come first, lit; everyone else's are dimmed; a
+	capsule; three at rest, eight in a fight, never a second row - except
+	your own buffs, which take up to three rows of eight (two by default; a
+	raider's world buffs run well past eight) and their own count at rest.
+	Your debuffs on the target come first, lit; everyone else's are dimmed; a
 	debuff you can dispel off yourself is edged red. (Era drew the deck's
 	buff pill until 2026-10-10; Joe: Era as the brief, like Forever.)
 
@@ -194,6 +196,11 @@ local TIMER_UNDER = 30
 -- The timer tag hangs this far below its square, so a row above the capsule
 -- stands that much further off it.
 local TAG_DROP = 6
+-- Your own buffs' rows: eight to a row at rest and in a fight alike, so no
+-- slot moves once one starts. Stacked away from the capsule, with room
+-- between for the timer tag under one square and the stack tag over the next.
+local ROWS_MAX = 3
+local ROW_STEP = SQ + TAG_DROP * 2
 
 -- Per aura on Era, per group on Forever. `mine` is your debuff on the target,
 -- edged in the accent with a glow; `theirs` everyone else's, dimmed; `dispel`
@@ -357,6 +364,9 @@ end
 --    if the template failed to create, say - and never alongside it.
 local function CancelAura(p)
 	if not p or not p._auraName then return end
+	-- A parked tile is invisible but still under the mouse (see ParkTile), and
+	-- its index is whatever it last showed - which is now some other buff.
+	if p._parked then return end
 	if InCombatLockdown and InCombatLockdown() then return end
 
 	-- Out of combat the index is guaranteed fresh - the last UNIT_AURA wrote it -
@@ -469,15 +479,28 @@ end
 --  asks the client for permission, and a tile that comes back into play is
 --  already where it belongs - which is what makes a frozen layout survivable.
 local function ParkTile(t)
-	if t._parked then return end
-	t._parked = true
-	t:SetAlpha(0)
-	-- Alpha, and nothing else. `EnableMouse` is refused on an ancestor of a
-	-- protected frame exactly like `SetPoint` is, and `Hide` on the secure button
-	-- itself is refused too - so the first version of this traded one blocked
-	-- call for another. A parked tile is taken out of the mouse path by a plain
-	-- Lua flag that the tooltip handlers read instead; see TileEnter. Nothing
-	-- here asks the client for anything.
+	if not t._parked then
+		t._parked = true
+		t:SetAlpha(0)
+		-- Alpha, and nothing else. `EnableMouse` is refused on an ancestor of a
+		-- protected frame exactly like `SetPoint` is, and `Hide` on the secure
+		-- button itself is refused too - so the first version of this traded one
+		-- blocked call for another. A parked tile is taken out of the mouse path
+		-- by a plain Lua flag that the tooltip and cancel handlers read instead;
+		-- see TileEnter. Nothing here asks the client for anything.
+	end
+
+	-- But the secure button still dispatches on a right-click, and its macro
+	-- names the buff this tile last showed. When buffs shift up a slot, that
+	-- buff is alive one square over, so a click on the empty-looking space
+	-- cancelled it. Disarmed here, outside a fight; a tile parked in one keeps
+	-- its macro until the fight ends, when UpdateAll parks it again and this
+	-- runs. SetCancelName re-arms it the next time the tile shows a buff.
+	local click = t.click
+	if click and click._macroName and not (InCombatLockdown and InCombatLockdown()) then
+		click._macroName = nil
+		click:SetAttribute("macrotext2", nil)
+	end
 end
 
 local function UnparkTile(t)
@@ -607,7 +630,8 @@ end
 
 --- One row of squares, from where the capsule's bars start, growing toward
 --  the other capsule: left to right off the player, right to left off the
---  mirrored target (Lattice handoff, Auras). Never a second row.
+--  mirrored target (Lattice handoff, Auras). Past eight - your own buffs
+--  only, whose max allows it - the next row out from the capsule.
 --
 --  `count` is how many slots to lay out and defaults to what is on screen. Prime
 --  passes the display's maximum instead, so that every tile has a home before
@@ -630,16 +654,20 @@ function Display:Arrange(count)
 	local side = opts.mirror and "RIGHT" or "LEFT"
 	local dir = opts.mirror and -1 or 1
 	local inset = opts.inset or 0
+	local out = opts.growUp and 1 or -1
 	for i = 1, slots do
 		local t = self.tiles[i]
 		if not t then break end
+		local col, row = (i - 1) % COMBAT, math.floor((i - 1) / COMBAT)
 		t:ClearAllPoints()
-		t:SetPoint(vp .. side, self.frame, vp .. side, dir * (inset + (i - 1) * SQ_STEP), 0)
+		t:SetPoint(vp .. side, self.frame, vp .. side,
+			dir * (inset + col * SQ_STEP), out * row * ROW_STEP)
 	end
+	local tall = SQ + (math.max(1, math.ceil(slots / COMBAT)) - 1) * ROW_STEP
 	if opts.fillWidth then
-		self.frame:SetHeight(SQ)
+		self.frame:SetHeight(tall)
 	else
-		self.frame:SetSize(math.max(1, slots * SQ_STEP - SQ_GAP), SQ)
+		self.frame:SetSize(math.max(1, math.min(slots, COMBAT) * SQ_STEP - SQ_GAP), tall)
 	end
 end
 
@@ -685,9 +713,11 @@ function Display:Collect()
 	return first
 end
 
---- How many show: three at rest, eight in a fight.
+--- How many show: three at rest, eight in a fight. Your own buffs: their
+--  own count at rest, every row in a fight.
 function Display:Limit()
-	local n = (Aur.fighting or (InCombatLockdown and InCombatLockdown())) and COMBAT or REST
+	local fighting = Aur.fighting or (InCombatLockdown and InCombatLockdown())
+	local n = fighting and (self.opts.max or COMBAT) or (self.opts.rest or REST)
 	return math.min(n, self.opts.max or n)
 end
 
@@ -806,7 +836,7 @@ end
 -- off and which way its rows grow, because those two are the same question.
 local TRAYS = {
 	{ key = "playerBuffs",   unit = "player", filter = "HELPFUL", debuff = false,
-	  above = true,  cancel = true },
+	  above = true,  cancel = true, rows = true },
 	{ key = "playerDebuffs", unit = "player", filter = "HARMFUL", debuff = true,
 	  above = false },
 	{ key = "targetBuffs",   unit = "target", filter = "HELPFUL", debuff = false,
@@ -840,6 +870,17 @@ local function TrayEnabled(cfg, t)
 	local side = SideFor(cfg, t)
 	return side.enabled ~= false and side[t.unit] ~= false
 end
+
+--- Rows of your own buffs, and how many show out of combat, from the options:
+--  one to three rows, and at rest anything up to every square they hold.
+local function PlayerBuffRows(cfg)
+	local b = cfg.buffs
+	local rows = math.max(1, math.min(ROWS_MAX, math.floor(tonumber(b.rows) or 2)))
+	local rest = math.max(1, math.min(rows * COMBAT,
+		math.floor(tonumber(b.restCount) or rows * COMBAT)))
+	return rows, rest
+end
+Aur.PlayerBuffRows = PlayerBuffRows
 
 --- Blizzard's own buff row, top-right of the screen.
 --
@@ -1134,7 +1175,7 @@ local WRAP_GAP = CLIP_PAD * 2
 -- Groups in the order they lay out. RAID on a debuff means one YOU can
 -- dispel; PLAYER means you (or your pet) cast it.
 local FOREVER_TRAYS = {
-	{ key = "playerBuffs", unit = "player", above = true, cancel = true,
+	{ key = "playerBuffs", unit = "player", above = true, cancel = true, rows = true,
 	  groups = { { key = "buffs", filter = "HELPFUL", look = "plain" } } },
 	{ key = "playerDebuffs", unit = "player", debuff = true,
 	  groups = { { key = "dispel", filter = "HARMFUL|RAID", look = "dispel" },
@@ -1290,7 +1331,7 @@ end
 --- One tray: a clipping host we own, and in it the client's container.
 local function BuildTray(def, F)
 	local t = { key = def.key, unit = def.unit, above = def.above,
-		debuff = def.debuff, cancel = def.cancel, groups = def.groups,
+		debuff = def.debuff, cancel = def.cancel, rows = def.rows, groups = def.groups,
 		mirror = def.mirror or (def.unit == "target"), failed = {} }
 	t.corner = (t.above and "BOTTOM" or "TOP") .. (t.mirror and "RIGHT" or "LEFT")
 
@@ -1304,10 +1345,13 @@ local function BuildTray(def, F)
 	local FD = AnchorUtil.FlowDirection
 	local groups = {}
 	for i, g in ipairs(def.groups) do
+		-- Your own buffs' lines are real rows, a row apart; the host is cut to
+		-- how many there are, and the count stops at its last square.
+		local gap = def.rows and (ROW_STEP - SQ) or WRAP_GAP
 		groups[i] = { key = g.key, filter = g.filter, maxFrameCount = REST,
 			init = Initializer(g.look, t, F),
-			layout = { elementSpacing = SQ_GAP, lineSpacing = WRAP_GAP,
-				groupLineSpacing = WRAP_GAP, layoutIndex = i } }
+			layout = { elementSpacing = SQ_GAP, lineSpacing = gap,
+				groupLineSpacing = gap, layoutIndex = i } }
 	end
 
 	-- Through the one builder every client-filled row uses: it sizes each
@@ -1367,6 +1411,10 @@ function Aur:AnchorForever()
 	for _, t in ipairs(self.forever.trays) do
 		local host = t.host
 		t.enabled = TrayEnabled(cfg, t)
+		if t.rows then
+			t.lines, t.rest = PlayerBuffRows(cfg)
+			host:SetHeight(CLIP_PAD * 2 + SQ + (t.lines - 1) * ROW_STEP)
+		end
 
 		local capsule = CapsuleFor(t.unit)
 		host:ClearAllPoints()
@@ -1413,8 +1461,10 @@ function Aur:AnchorForever()
 	self:AnchorEnchants()
 end
 
---- Rest or combat: three squares a row, or eight. Only the container's own
---  numbers change - no frame of ours moves or resizes in a fight.
+--- Rest or combat: three squares a row, or eight. Your own buffs: lines of
+--  eight either way, their own count at rest and every row in a fight. Only
+--  the container's own numbers change - no frame of ours moves or resizes in
+--  a fight.
 function Aur:SetEnergy(combat)
 	local F = self.forever
 	if not F then return end
@@ -1423,9 +1473,14 @@ function Aur:SetEnergy(combat)
 	for _, t in ipairs(F.trays) do
 		local c = t.container
 		if c then
-			pcall(c.SetFlowLayoutMaximumLineSize, c, n * SQ_STEP - SQ_GAP)
+			local line, count = n, n
+			if t.rows then
+				line = COMBAT
+				count = combat and (t.lines or 1) * COMBAT or (t.rest or REST)
+			end
+			pcall(c.SetFlowLayoutMaximumLineSize, c, line * SQ_STEP - SQ_GAP)
 			for _, g in ipairs(t.groups) do
-				pcall(c.SetAuraGroupMaxFrameCount, c, g.key, n)
+				pcall(c.SetAuraGroupMaxFrameCount, c, g.key, count)
 			end
 		end
 	end
@@ -1523,7 +1578,7 @@ function Aur:OnEnable()
 				max = COMBAT,
 			})
 			self.trays[i] = { key = t.key, unit = t.unit, above = t.above,
-				debuff = t.debuff, display = d }
+				debuff = t.debuff, rows = t.rows, display = d }
 			self[t.key] = d
 		end
 	end
@@ -1723,6 +1778,12 @@ function Aur:AnchorTrays()
 
 		d.opts.growUp   = t.above
 		d.opts.onlyMine = (t.debuff and t.unit == "target") and side.onlyMine or false
+		if t.rows then
+			-- Your own buffs' rows. A plain table write too: Prime builds and
+			-- places the slots a bigger max needs, once it is allowed to.
+			local rows, rest = PlayerBuffRows(cfg)
+			d.opts.max, d.opts.rest = rows * COMBAT, rest
+		end
 
 		-- Every geometry call below is off limits for a tray whose tiles carry
 		-- cancel buttons, not just the reparent - the restriction reaches the

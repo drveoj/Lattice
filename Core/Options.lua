@@ -617,7 +617,8 @@ end
 local function AurasGroup()
 	local function at(...) return { "modules", "auras", ... } end
 	-- Both clients draw the handoff's squares at its fixed size and counts
-	-- (Modules/Auras.lua), so there is no tile geometry to set.
+	-- (Modules/Auras.lua), so there is no tile geometry to set - bar your own
+	-- buffs' rows and their count at rest.
 	return group(L.options.auras.auras, {
 		enabled = toggle(L.common.enabled, nil, at("enabled")),
 		hideBlizzard = toggle(L.options.auras.hide_blizzard.name,
@@ -637,6 +638,10 @@ local function AurasGroup()
 			player = toggle(L.common.player, nil, at("buffs", "player")),
 			target = toggle(L.common.target, nil, at("buffs", "target")),
 			focus = A.isCamelot and toggle(L.common.focus, nil, at("buffs", "focus")) or nil,
+			rows = range(L.options.auras.rows.name, L.options.auras.rows.desc,
+				at("buffs", "rows"), 1, 3, 1),
+			restCount = range(L.options.auras.rest_count.name, L.options.auras.rest_count.desc,
+				at("buffs", "restCount"), 1, 24, 1),
 		}, { inline = true }),
 
 		debuffs = group(L.options.auras.debuffs, {
