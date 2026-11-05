@@ -249,7 +249,7 @@ end
 local function IsPlainWhite(fs)
 	if not fs or not fs.GetTextColor then return false end
 	local r, g, b = fs:GetTextColor()
-	if not r then return false end
+	if not r or A.IsSecret(r, g, b) then return false end
 	return r > 0.88 and g > 0.88 and b > 0.88
 end
 
