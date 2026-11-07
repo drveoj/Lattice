@@ -1,5 +1,12 @@
 # Lattice
 
+## 2.1.2 - 2026-11-07
+
+- Gap between player and target in Settings > Unit frames now works: it stretches the spine straight away and shows the gap you have, including one set by Ctrl-drag.
+- While unlocked, Ctrl + mouse wheel over your frame or your target's stretches the spine. The unlock bar and a tooltip on both frames now mention Ctrl.
+- Fixed (WoW Forever): changing a guild member's rank could be blocked with an error after you opened the Guild window from the Toolbox.
+- Fixed (WoW Forever): some tooltips could throw an error during a fight.
+
 ## 2.1.1 - 2026-10-30
 
 - Your buffs no longer fall off the end of the row. Above your player frame they now take rows of eight, two rows by default, so world buffs past the first eight still show. Out of combat up to 16 show; in a fight every row fills.
