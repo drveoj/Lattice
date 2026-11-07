@@ -1042,7 +1042,7 @@ local function ItemQuality(tip)
 	local fs = Left(tip, 1)
 	if not fs or not fs.GetTextColor or not _G.ITEM_QUALITY_COLORS then return nil end
 	local r, g, b = fs:GetTextColor()
-	if not r then return nil end
+	if not r or A.IsSecret(r, g, b) then return nil end
 	for q = 0, 7 do
 		local qc = _G.ITEM_QUALITY_COLORS[q]
 		if qc and math.abs(qc.r - r) < 0.03 and math.abs(qc.g - g) < 0.03
