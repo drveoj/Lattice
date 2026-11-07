@@ -1781,9 +1781,19 @@ local function CreateHandle(entry)
 
 	-- Nudge with the wheel for the last few pixels, in the node's own anchor -
 	-- against its parent where it has one. The target nudges the pair.
+	-- Ctrl-wheel on either half stretches the spine, 2 a notch - 1 each side,
+	-- so its centre stays on a whole pixel.
 	h:EnableKeyboard(false)
 	h:SetScript("OnMouseWheel", function(_, delta)
 		if InCombatLockdown() then return end
+		local partner = Partner(entry)
+		if partner and IsControlKeyDown and IsControlKeyDown() then
+			local lead = Lead(partner)
+			local from = lead ~= partner and PairState(lead, partner)
+			if from then Movers:StretchPair(entry.name, from.len + delta * 2) end
+			RefreshJunctions()
+			return
+		end
 		local mover = Lead(entry)
 		local point, rel, relPoint, x, y = mover.frame:GetPoint(1)
 		if not point then return end
@@ -1806,12 +1816,16 @@ local function CreateHandle(entry)
 		if button ~= "LeftButton" or self._wasDragged or not IsAltKeyDown() then return end
 		if Movers:SendBehind(entry.name) and GameTooltip then GameTooltip:Hide() end
 	end)
-	-- Said where it is needed: over a handle that another one overlaps.
+	-- Said where it is needed: over a handle that another one overlaps, and
+	-- over either half of the pair, whose Ctrl-stretch is otherwise unseen.
 	h:SetScript("OnEnter", function(self)
-		if self._dragging or not GameTooltip or not Stacked(entry) then return end
+		if self._dragging or not GameTooltip then return end
+		local stacked, pair = Stacked(entry), Partner(entry) ~= nil
+		if not (stacked or pair) then return end
 		GameTooltip:SetOwner(self, "ANCHOR_CURSOR")
 		GameTooltip:SetText(NodeLabel(entry.name))
-		GameTooltip:AddLine(L.movers.stack.send_behind, 0.8, 0.8, 0.85, true)
+		if pair then GameTooltip:AddLine(L.movers.pair.stretch, 0.8, 0.8, 0.85, true) end
+		if stacked then GameTooltip:AddLine(L.movers.stack.send_behind, 0.8, 0.8, 0.85, true) end
 		GameTooltip:Show()
 	end)
 	h:SetScript("OnLeave", function() if GameTooltip then GameTooltip:Hide() end end)

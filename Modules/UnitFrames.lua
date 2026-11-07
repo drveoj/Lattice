@@ -331,6 +331,8 @@ local LANE_H    = 4      -- the lane's stroke
 local SPINE_OFF  = 4      -- each hairline from the capsules' centre line
 local LABEL_GAP = 3
 local SPINE_MIN  = 40     -- however the movers left the capsules
+UF.SPINE_MIN = SPINE_MIN
+local PAIR_SEED  = 18     -- the default placement's gap (see RegisterMovers)
 local FLASH    = 0.2    -- seconds an interrupted cast shows red
 local RERASTER_AFTER = 0.1   -- the cold-start second pass on a lane's name
 
@@ -1189,13 +1191,19 @@ end
 function UF:MeasureSpine()
 	local spine = self.spine
 	if not spine then return end
-	local w = A.Config:Module("unitframes").gap or SPINE_MIN
+	local cfg = A.Config:Module("unitframes")
+	local w = cfg.gap or SPINE_MIN
 	local pr, tl = self.player:GetRight(), self.target:GetLeft()
 	if pr and tl then
 		local ps = self.player:GetEffectiveScale()
 		w = (tl * self.target:GetEffectiveScale() - pr * ps) / ps
 	end
 	w = math.max(SPINE_MIN, w)
+	-- The gap slider reads this back, so it shows a Ctrl-drag too.
+	if pr and tl then
+		local g = math.floor(w + 0.5)
+		if cfg.gap ~= g then cfg.gap = g end
+	end
 	if w ~= spine._w then
 		spine._w = w
 		spine:SetWidth(w)
@@ -1404,7 +1412,10 @@ UF.FOCUS_GAP, UF.FOCUS_DROP = FOCUS_GAP, FOCUS_DROP
 --  both the first-build path and the come-back-from-disabled path call it.
 function UF:RegisterMovers()
 	local cfg = A.Config:Module("unitframes")
-	local half = (math.max(cfg.width, MinWidth(cfg)) + cfg.gap) / 2
+	-- A fixed seed, not cfg.gap: MeasureSpine writes the live length there,
+	-- and a default that moved with it moved every frame still on its
+	-- default. 18 is what shipped, so no default layout shifts.
+	local half = (math.max(cfg.width, MinWidth(cfg)) + PAIR_SEED) / 2
 	-- `shape = "pill"` on every unit: unlocked, a unit is drawn as the pill
 	-- it is (Lattice board 4a).
 	A.Movers:Register("player", self.player,

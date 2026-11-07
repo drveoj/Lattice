@@ -272,7 +272,7 @@ Config.defaults = {
 				-- 10 pad + 46 orb + 13 + 200 bars + 12 + 40 readout + 24 pad
 				width    = 345,
 				height   = 64,
-				gap      = 18,       -- space between player and target capsules
+				gap      = 40,       -- the spine's length; never under its 40 minimum
 				orbSize  = 46,
 				barWidth = 200,
 				showPower     = true,

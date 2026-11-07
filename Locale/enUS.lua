@@ -615,8 +615,9 @@ L["movers.inspector.wrap_down"] = "down"
 L["movers.lock.frames_locked"] = "frames locked."
 
 -- The mode pill at the top of the screen while unlocked (Lattice board 4a).
+L["movers.pair.stretch"] = "Ctrl-drag or Ctrl-scroll to stretch the spine."
 L["movers.pill.unlocked"] = "Lattice unlocked"
-L["movers.pill.hint"] = "· drag a node · hold Shift for free placement"
+L["movers.pill.hint"] = "· drag a node · hold Shift for free placement · Ctrl-drag the spine to stretch it"
 L["movers.pill.lock"] = "LOCK"
 
 -- Over a node another one overlaps, in unlock: the way to the one underneath.
@@ -1662,6 +1663,9 @@ L["options.unit_frames.cast_note"] =
 L["options.unit_frames.classic_era_does_report"] =
 	"Classic Era now reports other units' casts natively."
 L["options.unit_frames.focus_scale.name"] = "Focus frame size"
+L["options.unit_frames.gap.desc"] =
+	"The length of the spine. You can also stretch it while unlocked: Ctrl-drag "
+		.. "or Ctrl-scroll your frame or your target's. Not during a fight."
 L["options.unit_frames.gap.name"] = "Gap between player and target"
 L["options.unit_frames.hide_blizzard.name"] = "Hide Blizzard's frames"
 L["options.unit_frames.off_draws_class_tinted"] =
@@ -1964,7 +1968,7 @@ L["tour.skip"] = "Skip — use the defaults"
 
 L["tour.spine.body"] =
 	"Drag the spine to where you want it: it snaps to the middle of your screen. "
-		.. "Ctrl-drag to stretch it, scroll to nudge it up or down (Shift-scroll for "
+		.. "Ctrl-drag or Ctrl-scroll to stretch it, scroll to nudge it up or down (Shift-scroll for "
 		.. "sideways), and hold Shift while dragging to place it freely. The two always "
 		.. "sit level: your casts run along the spine, and your bars hang from its middle."
 L["tour.spine.head"] = "You and your target."

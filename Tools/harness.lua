@@ -13520,6 +13520,39 @@ do
 		check(A.db.profile.anchors.target.lat.x == select(4, UFm.target:GetPoint(1)),
 			"and the length the drag left is the one written down ("
 			.. tostring(A.db.profile.anchors.target.lat.x) .. ")")
+
+		-- CTRL-SCROLL STRETCHES TOO (issue #1), 2 a notch, from either half.
+		M:StretchPair("target", len0)
+		local wheel = h:GetScript("OnMouseWheel")
+		_G.__ctrl = true
+		wheel(h, 3)
+		_G.__ctrl = nil
+		check(select(4, UFm.target:GetPoint(1)) == len0 + 6
+			and A.db.profile.anchors.target.lat.x == len0 + 6,
+			"Ctrl-scroll on the target stretches the spine 2 a notch, and keeps it ("
+			.. tostring(select(4, UFm.target:GetPoint(1))) .. ")")
+		local ph = reg.player.handle
+		local py0 = select(5, UFm.player:GetPoint(1))
+		_G.__ctrl = true
+		ph:GetScript("OnMouseWheel")(ph, -1)
+		_G.__ctrl = nil
+		check(select(4, UFm.target:GetPoint(1)) == len0 + 4
+			and select(5, UFm.player:GetPoint(1)) == py0,
+			"and on the player, without nudging the pair up or down")
+
+		-- THE GAP SLIDER IS THE SPINE (issue #1: it changed nothing, even after
+		-- a reload - the saved pair bond won over it).
+		UFm:MeasureSpine()
+		local ucfg = A.Config:Module("unitframes")
+		check(ucfg.gap == len0 + 4, "the gap setting reads the spine's real length ("
+			.. tostring(ucfg.gap) .. ")")
+		local opt = A.Options:Build().args.unitframes.args.gap
+		opt.set({ arg = opt.arg, type = opt.type }, len0 + 50)
+		check(select(4, UFm.target:GetPoint(1)) == len0 + 50
+			and A.db.profile.anchors.target.lat.x == len0 + 50,
+			"and setting it stretches the pair and keeps it ("
+			.. tostring(select(4, UFm.target:GetPoint(1))) .. ")")
+		check(opt.min == UFm.SPINE_MIN, "never offering less than the spine's minimum")
 		M:Lock()
 		M:StretchPair("target", len0)
 	end

@@ -151,7 +151,7 @@ local function range(name, desc, path, min, max, step, opts)
 		type = "range", name = name, desc = desc, order = next_(),
 		min = min, max = max, step = step, isPercent = opts.percent,
 		width = opts.width, get = Get, set = Set,
-		arg = { path = path, after = opts.after, scale = opts.scale },
+		arg = { path = path, after = opts.after, scale = opts.scale, onSet = opts.onSet },
 	}
 end
 
@@ -545,7 +545,16 @@ local function UnitFramesGroup()
 		sizeHeader = header(L.common.capsule),
 		width = range(L.common.width, nil, at("width"), 240, 520, 1),
 		height = range(L.common.height, nil, at("height"), 48, 96, 1),
-		gap = range(L.options.unit_frames.gap.name, nil, at("gap"), 0, 200, 1),
+		-- THE SPINE ITSELF, not a seed for the first placement: the saved pair
+		-- bond is what sets the gap, so the slider stretches the pair.
+		-- MeasureSpine writes the real length back, which also corrects the
+		-- value when the stretch is refused in combat.
+		gap = range(L.options.unit_frames.gap.name, L.options.unit_frames.gap.desc,
+			at("gap"), 40, 400, 1, { after = "none", onSet = function(v)
+				if A.Movers then A.Movers:StretchPair("target", v) end
+				local UF = A:GetModule("unitframes")
+				if UF and UF.MeasureSpine then UF:MeasureSpine() end
+			end }),
 		orbSize = range(L.options.unit_frames.orb_size.name, nil, at("orbSize"), 28, 72, 1),
 		barWidth = range(L.common.bar_width, nil, at("barWidth"), 120, 380, 1),
 		showPower = toggle(L.common.show_power_bar, nil, at("showPower")),
