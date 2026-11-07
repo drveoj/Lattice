@@ -680,6 +680,15 @@ local function newTexture(owner, layer, sub)
 	-- here the answer was nil and the check could not be written.
 	t.__owner = owner
 	function t:GetParent() return self.__owner end
+	-- ITS FRAME'S SCALE. It walked __parent, which a texture never had, so every
+	-- texture answered 1 and measured its width unscaled: a branch anchored to
+	-- a 0.71 trunk's stub and a test reading that stub agreed on the same wrong
+	-- end, 23 units out (2026-11-07).
+	function t:GetEffectiveScale()
+		local own = self.__scale or 1
+		local o = self.__owner
+		return own * ((o and o.GetEffectiveScale and o:GetEffectiveScale()) or 1)
+	end
 	function t:SetDrawLayer(l, s2) self.__layer, self.__sub = l, s2 end
 	function t:GetDrawLayer() return self.__layer, self.__sub end
 	-- The wrap modes recorded: "REPEAT" is what turns texcoords into a tile count.
@@ -1175,6 +1184,17 @@ function CreateFrame(kind, name, parent, template)
 		-- (Blizzard_CustomAuraContainer.lua:317-324).
 		if type(host) == "table" and host.__noAnchorTo then
 			error("SetPoint: cannot anchor to an AuraContainer", 2)
+		end
+		-- A PROTECTED FRAME NEVER ANCHORS TO A REGION, in a fight or out: "Cannot
+		-- anchor protected frames to regions". The Party branch hung off its
+		-- node's stub texture and was refused in game once it carried the
+		-- secure world markers (2026-11-07).
+		local hk = type(host) == "table" and host.__kind
+		if (hk == "Texture" or hk == "FontString" or hk == "MaskTexture")
+			and ProtectedInFamily(self) then
+			fail(("ADDON BLOCKED: SetPoint on %s to a %s - cannot anchor protected"
+				.. " frames to regions"):format(tostring(self.__name or self.__kind), hk))
+			return
 		end
 		-- SetPoint("CENTER") with no host anchors to the parent.
 		if host == nil and type(rel) ~= "string" then host = self.__parent end

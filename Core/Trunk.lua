@@ -814,11 +814,16 @@ function Proto:Place(key, panel)
 		end
 		dy = dy / k
 	end
+	-- Off the NODE, a stub's length out, not off the stub: the stub is a
+	-- texture, and a panel holding a secure button (the Party branch's world
+	-- markers) is protected - the client refuses to anchor one to a region.
+	-- The stub is in the node's units, the offset in the panel's.
+	local stub = STUB * (b:GetEffectiveScale() or 1) / (panel:GetEffectiveScale() or 1)
 	panel:ClearAllPoints()
 	if (self.side or -1) < 0 then
-		panel:SetPoint("RIGHT", b.stub, "LEFT", -JUNCTION / 2, dy)
+		panel:SetPoint("RIGHT", b, "LEFT", -(stub + JUNCTION / 2), dy)
 	else
-		panel:SetPoint("LEFT", b.stub, "RIGHT", JUNCTION / 2, dy)
+		panel:SetPoint("LEFT", b, "RIGHT", stub + JUNCTION / 2, dy)
 	end
 	if panel.SetClampedToScreen then panel:SetClampedToScreen(true) end
 	return true
