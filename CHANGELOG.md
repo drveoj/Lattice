@@ -1,5 +1,9 @@
 # Lattice
 
+## 2.1.3 - 2026-11-07
+
+- Fixed (WoW Forever): opening Party on the Toolbox in a group could throw an error instead of opening the panel.
+
 ## 2.1.2 - 2026-11-07
 
 - Gap between player and target in Settings > Unit frames now works: it stretches the spine straight away and shows the gap you have, including one set by Ctrl-drag.

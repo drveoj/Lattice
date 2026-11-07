@@ -38,6 +38,13 @@ local ADDON, A = ...
 --  rather than showing yesterday's news as today's.
 A.CHANGELOG = {
 	{
+		version = "2.1.3",
+		date    = "2026-11-07",
+		lines   = {
+			"Fixed (WoW Forever): opening Party on the Toolbox in a group could throw an error instead of opening the panel.",
+		},
+	},
+	{
 		version = "2.1.2",
 		date    = "2026-11-07",
 		lines   = {
