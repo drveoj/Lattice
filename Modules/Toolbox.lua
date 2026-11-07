@@ -1595,7 +1595,16 @@ TB.FOREVER_MICRO = {
 	LegacyMicroButton      = { key = "legacy",      label = L.toolbox.micro.legacy },
 	QuestLogMicroButton    = { key = "quests", ours = true },
 	HousingMicroButton     = { key = "housing",     label = L.toolbox.micro.housing },
-	GuildMicroButton       = { key = "guild",       label = L.toolbox.micro.guild },
+	-- OURS, NOT BLIZZARD'S: unlike Help or Quests, the Guild window has a
+	-- protected call inside it - the roster's rank reorder goes through
+	-- Blizzard's Menu system to SetGuildRankOrder (securecallfunction). Lending
+	-- the real button, even just to open the window, left that button tainted
+	-- for the rest of the session: the open itself never errors, but the next
+	-- rank change in the roster throws ADDON_ACTION_FORBIDDEN, blamed on us
+	-- (Joe, 2026-11-07 - reproduced only when Guild was opened through our
+	-- Toolbox; clean through Blizzard's own micro bar). Ours calls
+	-- ToggleGuildFrame instead, same path Era already uses.
+	GuildMicroButton       = { key = "guild", ours = true },
 	LFDMicroButton         = { key = "groupfinder", label = L.toolbox.micro.groupfinder },
 	CollectionsMicroButton = { key = "collections", label = L.toolbox.micro.collections },
 	EJMicroButton          = { key = "journal",     label = L.toolbox.micro.journal },
