@@ -21,6 +21,8 @@
 # Wago Addons. Its id is a short string rather than a number, and it is not a
 # slug you can guess - it comes off the project page.
 ## X-Wago-ID: EGPegON1
+# WoWInterface. Without this the packager skips the site without a word.
+## X-WoWI-ID: 27194
 
 Libs\Libs.xml
 
