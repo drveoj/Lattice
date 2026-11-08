@@ -38,6 +38,13 @@ local ADDON, A = ...
 --  rather than showing yesterday's news as today's.
 A.CHANGELOG = {
 	{
+		version = "2.1.4",
+		date    = "2026-11-08",
+		lines   = {
+			"Fixed a stream of errors in instances on WoW Forever when another player's class or name was hidden from addons.",
+		},
+	},
+	{
 		version = "2.1.3",
 		date    = "2026-11-07",
 		lines   = {

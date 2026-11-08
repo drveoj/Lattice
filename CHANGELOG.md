@@ -1,5 +1,9 @@
 # Lattice
 
+## 2.1.4 - 2026-11-08
+
+- Fixed a stream of errors in instances on WoW Forever when another player's class or name was hidden from addons.
+
 ## 2.1.3 - 2026-11-07
 
 - Fixed (WoW Forever): opening Party on the Toolbox in a group could throw an error instead of opening the panel.
