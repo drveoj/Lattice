@@ -13,15 +13,21 @@
 # So the sequence is still `bump.py`, commit, tag, push - and then, when you
 # actually mean it, press the button.
 #
-# THE UPLOAD IS OPT-IN. BigWigsMods/packager publishes to CurseForge,
-# WoWInterface and Wago when it finds a token for each, and does not when it does
-# not - so today this builds the zip and attaches it to a GitHub release and
-# sends nothing anywhere else. It starts publishing the day a CF_API_KEY secret
-# is added, which also wants `## X-Curse-Project-ID` in the .toc.
+# THE UPLOAD IS A TICK BOX, OFF BY DEFAULT. BigWigsMods/packager publishes to
+# CurseForge, WoWInterface and Wago whenever it finds a token for each, and the
+# tokens have been secrets since 2026-08-25 - so 2.1.2 and 2.1.3 went public
+# from a run meant as a GitHub release, and nobody announced them (2026-11-07).
+# Unticked, the tokens are handed over empty: the packager skips those sites
+# and only the zip and the GitHub release are made.
 name: Release
 
 on:
   workflow_dispatch:
+    inputs:
+      publish:
+        description: "Also upload to CurseForge, Wago and WoWInterface"
+        type: boolean
+        default: false
 
 permissions:
   contents: write
@@ -56,7 +62,8 @@ jobs:
           args: -l
         env:
           GITHUB_OAUTH: ${{ secrets.GITHUB_TOKEN }}
-          CF_API_KEY: ${{ secrets.CF_API_KEY }}
+          # Empty unless `publish` is ticked; an empty token is a skipped site.
+          CF_API_KEY: ${{ inputs.publish && secrets.CF_API_KEY || '' }}
           # THE SECRET IS *_API_KEY AND THE PACKAGER WANTS *_API_TOKEN, so the
           # mapping is not a tautology and the names must not be "tidied" to
           # match. They were WOWI_API_TOKEN on both sides, the secrets got
@@ -65,5 +72,5 @@ jobs:
           # site in silence, and the run goes green having published nothing.
           # CF_API_KEY is the same shape and only worked by luck: the packager
           # happens to read that name too.
-          WOWI_API_TOKEN: ${{ secrets.WOWI_API_KEY }}
-          WAGO_API_TOKEN: ${{ secrets.WAGO_API_KEY }}
+          WOWI_API_TOKEN: ${{ inputs.publish && secrets.WOWI_API_KEY || '' }}
+          WAGO_API_TOKEN: ${{ inputs.publish && secrets.WAGO_API_KEY || '' }}
