@@ -544,12 +544,20 @@ end
 --  Measured with the name's own width CLEARED first. A FontString that has been
 --  given a width reports the truncated string's extent, so leaving last update's
 --  clamp on would have every step "fit" and the row would never uncollapse.
+--
+--  Through W.StringWidth: on Forever a plain name can still report a secret
+--  width (UnitFrames.lua:552, Ragefire Chasm, 2026-11-08), and that measures
+--  it again on a ruler. nil is a width nobody can know, so it doesn't fit.
 local function Fits(f, name, sub, room)
 	f.name:SetWidth(0)
 	f.name:SetText(name)
 	f.sub:SetText(sub)
-	local w = f.name:GetStringWidth() or 0
-	if sub ~= "" then w = w + NAME_GAP + (f.sub:GetStringWidth() or 0) end
+	local w = W.StringWidth(f.name)
+	if w and sub ~= "" then
+		local s = W.StringWidth(f.sub)
+		w = s and (w + NAME_GAP + s)
+	end
+	if not w then return false, nil end
 	return w <= room, w
 end
 
@@ -617,7 +625,7 @@ local function UpdateName(f)
 	f._nameStep = #order
 	f._nameTruncated = true
 	local spare = room
-	if lastSub ~= "" then spare = spare - NAME_GAP - (f.sub:GetStringWidth() or 0) end
+	if lastSub ~= "" then spare = spare - NAME_GAP - (W.StringWidth(f.sub) or 0) end
 	-- Wrapping is off from construction, so there is nothing to switch off here:
 	-- the name must never take two lines on any path, because the health bar
 	-- hangs off this line's bottom edge.

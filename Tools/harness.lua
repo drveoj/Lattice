@@ -8873,6 +8873,20 @@ section("unitframes: the name row collapses rather than the frame growing", func
 		.. " string's extent and every form fits for ever (" .. n .. " / " .. s .. ")")
 	check(UF.target._nameTruncated == false, "and is not truncated any more")
 
+	-- A PLAIN NAME WITH A SECRET WIDTH. Forever can hide a string's extent
+	-- even when its text is ordinary, and adding to it threw on every target
+	-- change (UnitFrames.lua:552, 2026-11-08). The row measures it again.
+	if _G.__SecretStandIn then
+		local nameFS = UF.target.name
+		local own = rawget(nameFS, "GetStringWidth")
+		nameFS.GetStringWidth = function() return _G.__SecretStandIn() end
+		local ok, err = pcall(refresh)
+		nameFS.GetStringWidth = own
+		n = row()
+		check(ok and n == "Rat", "a name whose width is secret still lays out,"
+			.. " measured on a ruler (" .. (ok and n or tostring(err)) .. ")")
+	end
+
 	-- A PLAYER gives up the race, not a title: their name is their name.
 	mo.isPlayer, mo.name = true, "Padreamuerto"
 	mo.race, mo.class, mo.classToken = "Undead", "Mage", "MAGE"
@@ -15149,6 +15163,34 @@ section("secret values are drawn, never read", function()
 		"and any one of several arguments is enough")
 	check(A.IsSecret() == false, "no arguments is not secret")
 	check(A.IsSecret(nil) == false, "and neither is nil")
+
+	-- A SECRET CLASS TOKEN. Another player's class is secret in an instance,
+	-- and the client refuses it as a table key. Strings index fine in here,
+	-- so the colour tables are made to refuse a secret key the way it does.
+	do
+		local P = A.Palette
+		local token = _G.__MakeSecret("SECRETCLASS")
+		local refuse = { __index = function(_, k)
+			if A.IsSecret(k) then
+				error("attempted to index a table that cannot be indexed with secret keys", 2)
+			end
+		end }
+		local saved = units.party1
+		units.party1 = { exists = true, isPlayer = true, name = "Ally", class = "Ally",
+			classToken = token, level = 20 }
+		setmetatable(RAID_CLASS_COLORS, refuse)
+		if CUSTOM_CLASS_COLORS then setmetatable(CUSTOM_CLASS_COLORS, refuse) end
+		local okOf, of = pcall(P.ClassColorOf, P, token)
+		local okUnit, unit = pcall(P.ClassColor, P, "party1")
+		local okOrb, err = pcall(P.OrbColors, P, "party1")
+		setmetatable(RAID_CLASS_COLORS, nil)
+		if CUSTOM_CLASS_COLORS then setmetatable(CUSTOM_CLASS_COLORS, nil) end
+		units.party1 = saved
+		check(okOf and of == nil, "a secret class token has no colour, and doesn't throw")
+		check(okUnit and unit == nil, "nor does a player whose class is secret")
+		check(okOrb, "and their orb falls back to reaction"
+			.. (okOrb and "" or (" -- " .. tostring(err))))
+	end
 
 	local f = UF.player
 	local saved, savedMax = units.player.hp, units.player.hpMax

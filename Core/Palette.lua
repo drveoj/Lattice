@@ -880,6 +880,7 @@ end
 function Palette:OrbBaseColor(unit)
 	if unit and UnitExists(unit) and UnitIsPlayer(unit) then
 		local _, class = UnitClass(unit)
+		if A.IsSecret(class) then class = nil end
 		local color = class and ORB_CLASS_COLOR[class]
 		if color then return { color[1], color[2], color[3], 1 } end
 
@@ -928,8 +929,12 @@ end
 
 --- A class's colour by its token (WARRIOR), for something with no unit to
 --  ask - the Raid page's preview of a made-up raid.
+--
+--  A SECRET TOKEN IS NO CLASS. Another player's class is secret in an
+--  instance on Forever, and a secret can't be a table key - the ticker threw
+--  this every frame in Ragefire Chasm (2026-11-08).
 function Palette:ClassColorOf(class)
-	if type(class) ~= "string" then return nil end
+	if type(class) ~= "string" or A.IsSecret(class) then return nil end
 	local colors = _G.CUSTOM_CLASS_COLORS or _G.RAID_CLASS_COLORS
 	local cc = colors and colors[class]
 	if not cc or not cc.r then return nil end
