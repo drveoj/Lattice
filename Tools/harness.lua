@@ -2483,6 +2483,20 @@ function C_ChatInfo.SendAddonMessage(prefix, text, channel, target)
 end
 function IsInGuild() return _G.__inGuild == true end
 
+-- Loot: _G.__loot is a list of { texture, name, count, quality, locked, quest }.
+_G.__loot, _G.__looted, _G.__lootClosed = {}, {}, 0
+function GetNumLootItems() return #_G.__loot end
+function GetLootSlotInfo(i)
+	local s = _G.__loot[i]
+	if not s then return nil end
+	return s[1], s[2], s[3], nil, s[4], s[5], s[6], nil, nil
+end
+function LootSlotHasItem(i) return _G.__loot[i] ~= nil end
+function GetLootSlotLink(i) return _G.__loot[i] and ("|Hitem:" .. i .. "|h[" .. _G.__loot[i][2] .. "]|h") end
+function LootSlot(i) _G.__looted[#_G.__looted + 1] = i end
+function CloseLoot() _G.__lootClosed = _G.__lootClosed + 1 end
+function IsFishingLoot() return _G.__fishing == true end
+StaticPopup_Hide = StaticPopup_Hide or function() end
 function C_ChatInfo.PerformEmote(token)
 	_G.__emotes[#_G.__emotes + 1] = token
 	_G.__emote = token
@@ -2658,6 +2672,13 @@ function UnregisterUnitWatch(f) _G.__unitWatched[f] = nil; f.__unitWatch = nil e
 GameTooltip = CreateFrame("Frame", "GameTooltip")
 GameTooltip:Hide()
 
+-- Blizzard's loot window, with the events it registers counted.
+LootFrame = CreateFrame("Frame", "LootFrame", UIParent)
+LootFrame:Hide()
+LootFrame.__events = { LOOT_OPENED = true, LOOT_CLOSED = true }
+function LootFrame:RegisterEvent(e) self.__events[e] = true end
+function LootFrame:UnregisterAllEvents() self.__events = {} end
+
 --- The ANCHOR KIND is recorded, not dropped.
 --
 --  It was thrown away here while the addon-made tooltip mock beside this one
@@ -2675,6 +2696,7 @@ function GameTooltip:SetQuestLogItem(kind, i)
 	self.__shows = { "item", kind, i, _G.__questSelected }
 end
 function GameTooltip:SetSpellByID(id) self.__shows = { "spell", id } end
+function GameTooltip:SetLootItem(i) self.__shows = { "loot", i } end
 --- Counted, because on the beta a call made while auras are restricted is an
 --  error even when our own pcall survives it: Blizzard's PTR feedback addon
 --  hooks this and reads the aura again after us. Missing until 2026-09-23, so
@@ -8040,7 +8062,7 @@ local FILES = {
 	"Modules/UnitFrames.lua", "Modules/Resources.lua", "Modules/PartyFrames.lua",
 	"Modules/RaidFrames.lua", "Modules/GroupTools.lua",
 	"Modules/ActionBars.lua", "Modules/Auras.lua",
-	"Modules/QuestTracker.lua", "Modules/QuestLog.lua", "Modules/Bags.lua",
+	"Modules/QuestTracker.lua", "Modules/QuestLog.lua", "Modules/Bags.lua", "Modules/Loot.lua",
 	"Modules/Minimap.lua", "Modules/XPBar.lua",
 	"Modules/Chat.lua",
 	"Modules/Tooltips.lua",
@@ -20359,6 +20381,9 @@ do
 			-- its own until the group bond (phase 2) says where it hangs, and
 			-- only ever up in a raid, which no preset has been drawn for.
 			raid = true,
+			-- The loot window (2026-11-09): only up while looting, and on a
+			-- default of its own.
+			loot = true,
 		}
 
 		local named = {}
@@ -31377,6 +31402,70 @@ section("version check: says once when someone has a newer Lattice", function()
 	_G.__inGuild, _G.__inGroup = nil, nil
 	VC.sent, VC.answered, VC.told = {}, {}, nil
 end)
+
+section("loot: our window, where you put it", function()
+	local LT = A:GetModule("loot")
+	check(LT and LT.enabled, "the loot module is on by default")
+	check(next(LootFrame.__events) == nil,
+		"Blizzard's loot window hears nothing, so it never opens")
+	check(A.Movers.registry.loot ~= nil, "and ours has a place in unlock mode")
+
+	_G.__loot = {
+		{ "icon1", "Linen Cloth", 3, 1 },
+		{ "icon2", "Ripped Pauldrons", 1, 2 },
+		{ "coin", "5 Silver\n3 Copper", 0, 0 },
+		{ "icon4", "Quest Thing", 1, 1, false, true },
+	}
+	_G.__looted, _G.__lootClosed = {}, 0
+	fire("LOOT_OPENED", false)
+	local f = LT.frame
+	check(f:IsShown(), "opens on LOOT_OPENED")
+	local shown = 0
+	for _, r in ipairs(f.rows) do if r:IsShown() then shown = shown + 1 end end
+	check(shown == 4, "one row per slot (" .. shown .. ")")
+	check(f.rows[3].name:GetText() == "5 Silver, 3 Copper", "coins read on one line")
+	check(f.rows[1].icon.count:GetText() == "3", "a stack shows its count")
+	local p, rel = f:GetPoint()
+	check(p == "TOPLEFT" and rel == LT.anchor, "it opens at its anchor, not at the mouse")
+	local h4 = f:GetHeight()
+
+	local wasClick = _G.__clickAnswer
+	_G.__clickAnswer = false   -- no modifier held
+	f.rows[2]:GetScript("OnClick")(f.rows[2], "LeftButton")
+	_G.__clickAnswer = wasClick
+	check(_G.__looted[1] == 2, "clicking a row loots that slot")
+	check(LootFrame.selectedSlot == 2 and LootFrame.selectedQuality == 2,
+		"and tells LootFrame which, for the master loot list")
+
+	fire("LOOT_SLOT_CLEARED", 2)
+	check(not f.rows[2]:IsShown() and f:GetHeight() < h4,
+		"a looted slot leaves no gap, and the window shrinks")
+	check(select(2, f.rows[3]:GetPoint()) == f, "the rows below close up")
+
+	fire("LOOT_CLOSED")
+	check(not f:IsShown(), "closes on LOOT_CLOSED")
+	check(_G.__lootClosed == 0, "without telling the server twice")
+
+	-- Closed by us (Escape, the cross): the server is told.
+	fire("LOOT_OPENED", false)
+	f:Hide()
+	check(_G.__lootClosed == 1, "closing it ourselves calls CloseLoot once")
+	fire("LOOT_CLOSED")
+
+	-- At the mouse, when asked.
+	A.Config:Module("loot").underMouse = true
+	fire("LOOT_OPENED", false)
+	local _, rel2 = f:GetPoint()
+	check(rel2 == UIParent, "with Open at the mouse, it opens at the cursor")
+	fire("LOOT_CLOSED")
+	A.Config:Module("loot").underMouse = false
+
+	-- Off gives Blizzard's back.
+	A:SetModuleEnabled("loot", false)
+	check(LootFrame.__events.LOOT_OPENED, "switched off, Blizzard's loot window hears again")
+	A:SetModuleEnabled("loot", true)
+	check(next(LootFrame.__events) == nil, "and on again, silenced again")
+	_G.__loot = {}
 end)
 
 section("skins: the choice belongs to the profile, and travels with it", function()

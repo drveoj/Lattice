@@ -512,6 +512,10 @@ Config.defaults = {
 			-- reskin: Blizzard draws five independent ContainerFrames that each
 			-- remember their own position, and there is no arrangement of those
 			-- that turns into a single categorised grid.
+			loot = {
+				enabled    = true,
+				underMouse = false,
+			},
 			bags = {
 				enabled      = true,
 				hideBlizzard = true,

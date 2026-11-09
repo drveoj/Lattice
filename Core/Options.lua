@@ -997,6 +997,12 @@ local function BagsGroup()
 		sellHeader = header(L.options.bags.sell_header),
 		junkAutoSell = toggle(L.options.bags.junk_auto_sell.name,
 			L.options.bags.sells_every_poor_quality, at("junkAutoSell")),
+
+		lootHeader = header(L.options.loot.header),
+		lootEnabled = toggle(L.options.loot.enabled.name, L.options.loot.enabled.desc,
+			{ "modules", "loot", "enabled" }),
+		lootUnderMouse = toggle(L.options.loot.under_mouse.name,
+			L.options.loot.under_mouse.desc, { "modules", "loot", "underMouse" }),
 	})
 end
 

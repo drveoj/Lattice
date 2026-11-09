@@ -655,6 +655,17 @@ L["movers.name.raid"] = "Raid"
 L["movers.name.chat"] = "Chat"
 L["movers.name.minimap"] = "Minimap"
 L["movers.name.tooltip"] = "Tooltip"
+L["movers.name.loot"] = "Loot"
+L["loot.title"] = "Loot"
+L["loot.fishing"] = "Fishing"
+L["loot.empty"] = "Nothing left"
+L["options.loot.header"] = "Loot window"
+L["options.loot.enabled.name"] = "Lattice's loot window"
+L["options.loot.enabled.desc"] =
+	"A glass loot window in place of Blizzard's. Move it in unlock mode."
+L["options.loot.under_mouse.name"] = "Open at the mouse"
+L["options.loot.under_mouse.desc"] =
+	"Open the loot window where you clicked instead of where you put it."
 
 -- options -----------------------------------------------------------------
 

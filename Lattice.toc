@@ -82,6 +82,7 @@ Modules\Auras.lua
 Modules\QuestTracker.lua
 Modules\QuestLog.lua
 Modules\Bags.lua
+Modules\Loot.lua
 Modules\Minimap.lua
 Modules\XPBar.lua
 Modules\Chat.lua
