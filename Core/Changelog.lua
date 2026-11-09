@@ -38,6 +38,18 @@ local ADDON, A = ...
 --  rather than showing yesterday's news as today's.
 A.CHANGELOG = {
 	{
+		version = "2.2.0",
+		date    = "2026-11-09",
+		lines   = {
+			"A loot window of Lattice's own, which opens wherever you put it in unlock mode.",
+			"Bags can show one bag at a time.",
+			"The XP bar shows your rested percentage and whether you are resting.",
+			"Unit frames can face away from the centre of the screen.",
+			"Lattice tells you once when someone in your guild or group has a newer version.",
+			"WoW Forever: a Shaman's level disc is blue, as the client colours it.",
+		},
+	},
+	{
 		version = "2.1.4",
 		date    = "2026-11-08",
 		lines   = {

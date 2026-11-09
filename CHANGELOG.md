@@ -1,5 +1,14 @@
 # Lattice
 
+## 2.2.0 - 2026-11-09
+
+- A loot window of Lattice's own, which opens wherever you put it in unlock mode.
+- Bags can show one bag at a time.
+- The XP bar shows your rested percentage and whether you are resting.
+- Unit frames can face away from the centre of the screen.
+- Lattice tells you once when someone in your guild or group has a newer version.
+- WoW Forever: a Shaman's level disc is blue, as the client colours it.
+
 ## 2.1.4 - 2026-11-08
 
 - Fixed a stream of errors in instances on WoW Forever when another player's class or name was hidden from addons.
