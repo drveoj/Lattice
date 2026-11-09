@@ -5311,6 +5311,8 @@ _G.__xp, _G.__xpMax, _G.__rested = 8600, 10000, 1200
 function UnitXP() return _G.__xp end
 function UnitXPMax() return _G.__xpMax end
 function GetXPExhaustion() return _G.__rested end
+_G.__resting = false
+function IsResting() return _G.__resting end
 function GetMaxPlayerLevel() return 60 end
 MAX_PLAYER_LEVEL = 60
 
@@ -23436,9 +23438,31 @@ check(XPm.frame:IsShown(), "xp bar visible below max level")
 -- WHAT IS LEFT, not what is done. "86% Level 15" is two facts about where you
 -- have been; the line counts DOWN to the level you are working towards, which is
 -- what anybody watching it is actually watching.
-check(XPm.frame.text:GetText() == "14% to Level 16",
-	"the readout counts down to the next level ("
+check(XPm.frame.text:GetText() == "14% to Level 16  \194\183  12% rested",
+	"the readout counts down to the next level, and says how much is rested ("
 	.. tostring(XPm.frame.text:GetText()) .. ")")
+
+-- Rested and resting, both on the same line.
+do
+	local wasRested = _G.__rested
+	_G.__rested = 15000
+	_G.__resting = true
+	fire("PLAYER_UPDATE_RESTING")
+	check(XPm.frame.text:GetText() == "14% to Level 16  \194\183  150% rested  \194\183  Resting",
+		"rested can pass 100%, and an inn says Resting ("
+		.. tostring(XPm.frame.text:GetText()) .. ")")
+	_G.__rested, _G.__resting = 0, false
+	fire("PLAYER_UPDATE_RESTING")
+	check(XPm.frame.text:GetText() == "14% to Level 16",
+		"with no rest and out of town, it is the countdown alone ("
+		.. tostring(XPm.frame.text:GetText()) .. ")")
+	_G.__rested = 5
+	XPm.Update()
+	check(XPm.frame.text:GetText():find("1%% rested$"),
+		"a sliver of rest reads 1%, never 0 (" .. tostring(XPm.frame.text:GetText()) .. ")")
+	_G.__rested = wasRested
+	XPm.Update()
+end
 
 -- ROUNDED UP, so it never reads 0% while there is still experience to earn -
 -- the one number a countdown must not show early.

@@ -2017,6 +2017,8 @@ L["tracker.navigate.routing_s"] = "routing to %s."
 -- xp ----------------------------------------------------------------------
 
 L["xp.to_level"] = "%d%% to Level %d"
+L["xp.rested"] = "%d%% rested"
+L["xp.resting"] = "Resting"
 
 -- zen ---------------------------------------------------------------------
 

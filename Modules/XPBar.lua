@@ -135,7 +135,16 @@ local function Update()
 		-- keeps the whole numbers whole; the epsilon covers everything else.
 		local left = math.ceil((max - cur) * 100 / max - 1e-9)
 		if left < 0 then left = 0 elseif left > 100 then left = 100 end
-		f.text:SetText(A.F(L.xp.to_level, left, level + 1))
+		local parts = { A.F(L.xp.to_level, left, level + 1) }
+		-- Rested as a share of this level, as Blizzard's bar tooltip gives it.
+		-- It can pass 100%. Never shown as 0% while there is some.
+		if exhaustion and exhaustion > 0 then
+			local rested = math.max(1, math.floor(exhaustion * 100 / max + 1e-9))
+			parts[#parts + 1] = A.F(L.xp.rested, rested)
+		end
+		-- In an inn or a city, where rest builds up.
+		if IsResting and IsResting() then parts[#parts + 1] = L.xp.resting end
+		f.text:SetText(table.concat(parts, "  \194\183  "))
 		W.Color(f.text, c.textDim)
 		f.text:Show()
 	else
@@ -152,6 +161,7 @@ function XP:OnEnable()
 	A:RegisterEvent(self, "PLAYER_XP_UPDATE", Update)
 	A:RegisterEvent(self, "PLAYER_LEVEL_UP", Update)
 	A:RegisterEvent(self, "UPDATE_EXHAUSTION", Update)
+	A:RegisterEvent(self, "PLAYER_UPDATE_RESTING", Update)
 	A:RegisterEvent(self, "PLAYER_ENTERING_WORLD", Update)
 
 	self:OnConfigChanged()
