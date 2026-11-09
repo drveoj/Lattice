@@ -31278,6 +31278,28 @@ section("profiles: nothing keeps a reference to a config table", function()
 			break
 		end
 	end
+
+	-- A per-bar setting survives a round trip, and the other profile keeps
+	-- the defaults.
+	local mine = A.db.profile.modules.actionbars.bars[2]
+	local oldScale, oldRows = mine.scale, mine.rows
+	mine.scale, mine.rows = 0.7, 3
+	A.db:SetProfile("__profiletest")
+	local other = A.db.profile.modules.actionbars.bars[2]
+	check(other.scale == 1.0 and other.rows == 1 and other.point == "BOTTOM",
+		"another profile's bar 2 has the defaults (" .. tostring(other.scale) .. ", "
+		.. tostring(other.rows) .. ", " .. tostring(other.point) .. ")")
+	A.db:SetProfile(was)
+	local back = A.db.profile.modules.actionbars.bars[2]
+	check(back.scale == 0.7 and back.rows == 3 and back.point == "BOTTOM",
+		"and switching back restores this profile's bar 2 (" .. tostring(back.scale)
+		.. ", " .. tostring(back.rows) .. ", " .. tostring(back.point) .. ")")
+	local bar2
+	for _, bar in ipairs(AB2.bars) do if tostring(bar.id) == "2" then bar2 = bar end end
+	check(bar2 == nil or bar2.cfg == back, "and the built bar reads it")
+	back.scale, back.rows = oldScale, oldRows
+	A:Reconfigure()
+end)
 end)
 
 section("skins: the choice belongs to the profile, and travels with it", function()
