@@ -834,9 +834,10 @@ end
 -- custom palette. These are the Classic Era values the disc is specified to
 -- communicate, in the 0-255 values used by Blizzard's class-colour table.
 --
--- Shaman is intentionally the Vanilla pink supplied for this design. It is
--- kept here, rather than changing RAID_CLASS_COLORS, because the rest of the
--- UI should still respect the player's chosen class-colour addon.
+-- Shaman is Vanilla pink on Era and blue on WoW Forever, as each client's own
+-- class colours have it (Forever takes them from C_ClassColor, and there a
+-- Horde paladin is the pink one). Kept here, rather than changing
+-- RAID_CLASS_COLORS, so the rest of the UI still respects a class-colour addon.
 local ORB_CLASS_COLOR = {
 	WARRIOR = C(199, 156, 110),
 	PALADIN = C(245, 140, 186),
@@ -848,6 +849,7 @@ local ORB_CLASS_COLOR = {
 	WARLOCK = C(135, 135, 237),
 	DRUID   = C(255, 125,  10),
 }
+if A.isCamelot then ORB_CLASS_COLOR.SHAMAN = C(0, 112, 221) end
 
 local ORB_HOSTILE  = C(255, 154, 118)
 local ORB_NEUTRAL  = C(240, 180, 106)

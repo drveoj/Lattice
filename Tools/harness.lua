@@ -5394,6 +5394,10 @@ RAID_CLASS_COLORS = {
 	WARLOCK = { r = 0.53, g = 0.53, b = 0.93 },
 	DRUID   = { r = 1.00, g = 0.49, b = 0.04 },
 }
+-- Forever's client colours come from C_ClassColor: Shaman is blue there.
+if _G.__flavour == "camelot" then
+	RAID_CLASS_COLORS.SHAMAN = { r = 0.00, g = 0.44, b = 0.87 }
+end
 
 -- unit state -----------------------------------------------------------------
 
@@ -30200,9 +30204,16 @@ do
 		.. " is sound arithmetic about the deck and was never a claim about what"
 		.. " a player should get")
 
-	check(math.abs(RAID_CLASS_COLORS.SHAMAN.r - 0.96) < 0.004
-		and math.abs(RAID_CLASS_COLORS.SHAMAN.b - 0.73) < 0.004,
-		"and a Shaman is pink, because this is Vanilla - blue is TBC's answer")
+	-- The level disc's Shaman follows the client: pink on Era, blue on Forever.
+	local shaman = A.Palette:OrbBaseColor("party1")
+	local blue = A.isCamelot
+	if blue then
+		check(shaman[1] < 0.01 and math.abs(shaman[3] - 221 / 255) < 0.01,
+			"on Forever a Shaman's disc is blue, as the client has it")
+	else
+		check(math.abs(shaman[1] - 245 / 255) < 0.01 and math.abs(shaman[3] - 186 / 255) < 0.01,
+			"on Era a Shaman's disc is pink, as the client has it")
+	end
 end
 
 print("== the client's dialogs are its own ==")
