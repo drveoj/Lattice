@@ -45,6 +45,7 @@ Locale\zhTW.lua
 
 Core\Core.lua
 Core\Changelog.lua
+Core\VersionCheck.lua
 Core\Media.lua
 Core\Palette.lua
 Core\Glass.lua

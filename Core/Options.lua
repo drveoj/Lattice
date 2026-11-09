@@ -295,6 +295,9 @@ local function GeneralGroup()
 		-- The window's own animation (options handoff 7c): no stagger, 120 ms.
 		reducedMotion = toggle(L.options.general.reduced_motion.name,
 			L.options.general.reduced_motion.desc, { "reducedMotion" }, { after = "none" }),
+		versionCheck = toggle(L.options.general.version_check.name,
+			L.options.general.version_check.desc, { "versionCheck" },
+			{ after = "none", defaultTrue = true }),
 
 		posHeader = header(L.options.general.pos_header),
 		bind = BindAction(),

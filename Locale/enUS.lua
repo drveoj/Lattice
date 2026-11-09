@@ -440,6 +440,8 @@ L["core.misc.label9"] = "Bar 9"
 
 L["core.pump.event"] = "event '%s':"
 L["core.pump.ticker"] = "ticker:"
+L["core.version.newer"] =
+	"Lattice %s is out (you have %s). Update from CurseForge, Wago or WoWInterface."
 
 L["core.rename.keep"] = "Keep both"
 L["core.rename.notice"] =
@@ -1174,6 +1176,10 @@ L["options.general.reduced_motion.desc"] =
 	"In this window: every node arrives at once, and every move takes "
 		.. "120 ms."
 L["options.general.reduced_motion.name"] = "Reduced motion"
+L["options.general.version_check.desc"] =
+	"Lattice tells your guild and group which version you have, and says in "
+		.. "chat once if one of them has a newer one."
+L["options.general.version_check.name"] = "Tell me when a newer version is out"
 L["options.general.layout.desc"] =
 	"Your whole arrangement as one line of text, to keep or share, and the "
 		.. "place to paste somebody else's."

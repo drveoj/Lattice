@@ -2474,6 +2474,15 @@ MoveViewUpStart, MoveViewUpStop     = moveStart("Up"), moveStop("Up")
 MoveViewDownStart, MoveViewDownStop = moveStart("Down"), moveStop("Down")
 
 C_ChatInfo = C_ChatInfo or {}
+_G.__addonSent = {}
+function C_ChatInfo.RegisterAddonMessagePrefix(p) _G.__addonPrefix = p return true end
+function C_ChatInfo.SendAddonMessage(prefix, text, channel, target)
+	local s = _G.__addonSent
+	s[#s + 1] = { prefix = prefix, text = text, channel = channel, target = target }
+	return 0
+end
+function IsInGuild() return _G.__inGuild == true end
+
 function C_ChatInfo.PerformEmote(token)
 	_G.__emotes[#_G.__emotes + 1] = token
 	_G.__emote = token
@@ -8023,7 +8032,7 @@ local FILES = {
 	"Locale/frFR.lua", "Locale/itIT.lua", "Locale/koKR.lua",
 	"Locale/ptBR.lua", "Locale/ruRU.lua", "Locale/zhCN.lua",
 	"Locale/zhTW.lua",
-	"Core/Core.lua", "Core/Changelog.lua",
+	"Core/Core.lua", "Core/Changelog.lua", "Core/VersionCheck.lua",
 	"Core/Media.lua", "Core/Palette.lua", "Core/Glass.lua",
 	"Core/Widgets.lua", "Core/Errors.lua", "Core/Config.lua", "Core/Movers.lua", "Core/Braids.lua", "Core/Layout.lua", "Core/Presets.lua", "Core/Fader.lua",
 	"Core/Trunk.lua", "Core/Mail.lua", "Core/Nav.lua", "Core/Launchers.lua",
@@ -31310,6 +31319,63 @@ section("profiles: nothing keeps a reference to a config table", function()
 	check(bar2 == nil or bar2.cfg == back, "and the built bar reads it")
 	back.scale, back.rows = oldScale, oldRows
 	A:Reconfigure()
+end)
+
+section("version check: says once when someone has a newer Lattice", function()
+	local VC = A.VersionCheck
+	check(_G.__addonPrefix == VC.PREFIX, "the prefix is registered at load")
+	VC.sent, VC.answered, VC.told = {}, {}, nil
+	_G.__addonSent = {}
+
+	-- Sends to the guild and the group, once a minute at most.
+	_G.__inGuild, _G.__inGroup = true, true
+	VC:Broadcast()
+	local chans = {}
+	for _, m in ipairs(_G.__addonSent) do chans[m.channel] = m.text end
+	check(chans.GUILD == "V1:" .. A.version and chans.PARTY == "V1:" .. A.version,
+		"sends our version to the guild and the party")
+	local n = #_G.__addonSent
+	VC:Broadcast()
+	check(#_G.__addonSent == n, "and not again inside the minute")
+
+	local said = {}
+	local add = DEFAULT_CHAT_FRAME.AddMessage
+	DEFAULT_CHAT_FRAME.AddMessage = function(_, msg) said[#said + 1] = tostring(msg) end
+	local a1, a2, a3 = A:ParseVersion(A.version)
+	local newer = (a1 + 1) .. ".0.0"
+	fire("CHAT_MSG_ADDON", VC.PREFIX, "V1:" .. newer, "GUILD", "Someone-Realm")
+	fire("CHAT_MSG_ADDON", VC.PREFIX, "V1:" .. newer, "GUILD", "Other-Realm")
+	check(#said == 1 and said[1]:find(newer, 1, true) ~= nil,
+		"a newer version is said in chat once (" .. #said .. ")")
+
+	-- An older copy gets a whisper back, once per sender.
+	_G.__addonSent = {}
+	fire("CHAT_MSG_ADDON", VC.PREFIX, "V1:0.9.0", "GUILD", "Old-Realm")
+	fire("CHAT_MSG_ADDON", VC.PREFIX, "V1:0.9.0", "GUILD", "Old-Realm")
+	check(#_G.__addonSent == 1 and _G.__addonSent[1].channel == "WHISPER"
+		and _G.__addonSent[1].target == "Old-Realm",
+		"an older copy is answered with a whisper, once")
+	fire("CHAT_MSG_ADDON", VC.PREFIX, "V1:0.8.0", "WHISPER", "Older-Realm")
+	check(#_G.__addonSent == 1, "and a whisper is never answered")
+
+	-- Our own echo, another prefix, junk text: nothing.
+	fire("CHAT_MSG_ADDON", VC.PREFIX, "V1:" .. (a1 + 2) .. ".0.0", "GUILD", UnitName("player"))
+	fire("CHAT_MSG_ADDON", "Other", "V1:" .. (a1 + 2) .. ".0.0", "GUILD", "X-Realm")
+	fire("CHAT_MSG_ADDON", VC.PREFIX, "hello", "GUILD", "X-Realm")
+	check(#said == 1, "ignores its own echo, other prefixes and junk")
+
+	-- Off means silent both ways.
+	A.db.profile.versionCheck = false
+	VC.sent, VC.told = {}, nil
+	_G.__addonSent = {}
+	VC:Broadcast()
+	fire("CHAT_MSG_ADDON", VC.PREFIX, "V1:" .. newer, "GUILD", "Someone-Realm")
+	check(#_G.__addonSent == 0 and #said == 1, "switched off, it sends and says nothing")
+	A.db.profile.versionCheck = nil
+
+	DEFAULT_CHAT_FRAME.AddMessage = add
+	_G.__inGuild, _G.__inGroup = nil, nil
+	VC.sent, VC.answered, VC.told = {}, {}, nil
 end)
 end)
 
