@@ -88,6 +88,7 @@ L["bags.fly.equipped"] = "EQUIPPED BAGS"
 L["bags.fly.keyring"] = "KEYRING"
 L["bags.fly.n_slots"] = "%d slots"
 L["bags.fly.only"] = "%s only"
+L["bags.fly.solo_hint"] = "Click to show only this bag; click again for all."
 
 L["bags.sell.sold_one"] = "sold %s junk item for %s."
 L["bags.sell.sold_many"] = "sold %s junk items for %s."

@@ -27803,6 +27803,45 @@ do
 		"with its buttons parented to a KEYRING proxy, which is what makes"
 		.. " Blizzard's own OnEnter take the SetInventoryItem branch for them")
 
+	-- ONE BAG AT A TIME. The grid is by category, so nothing said which bag
+	-- an item was in - and a bag has to be emptied before the game lets you
+	-- swap it out (2026-11-09).
+	do
+		local row = f.flyout.rows[2]
+		local p0, p1 = f.proxies[0], f.proxies[1]
+		row:GetScript("OnEnter")(row)
+		check(row.tile.bag == 1 and p1:GetAlpha() == 1 and p0:GetAlpha() < 1,
+			"hovering a bag's row lights its items and dims the others' ("
+			.. p1:GetAlpha() .. " / " .. p0:GetAlpha() .. ")")
+		row:GetScript("OnLeave")(row)
+		check(p0:GetAlpha() == 1 and p1:GetAlpha() == 1, "and leaving puts them back")
+
+		row:GetScript("OnMouseUp")(row, "LeftButton")
+		local shown = 0
+		for _, b in pairs(f.buttons[1]) do if b:IsShown() then shown = shown + 1 end end
+		check(f.onlyBag == 1 and not p0:IsShown() and p1:IsShown(),
+			"clicking it shows that bag alone")
+		check(shown == _G.__bags[1].size,
+			"every slot of it, the empty ones too, so you can see when it is empty ("
+			.. shown .. ")")
+		check(row.selected and f.used == 5,
+			"its row stays lit, and the count is that bag's (" .. tostring(f.used) .. ")")
+		row:GetScript("OnMouseUp")(row, "LeftButton")
+		check(f.onlyBag == nil and p0:IsShown(), "and clicking again shows them all")
+
+		-- Holding something, a click is a drop, not a view.
+		_G.__cursor = { id = 2589, count = 1 }
+		row.tile:GetScript("OnClick")(row.tile, "LeftButton")
+		_G.__cursor = nil
+		check(f.onlyBag == nil, "with an item on the cursor a click puts it in instead")
+
+		row:GetScript("OnMouseUp")(row, "LeftButton")
+		Bg:Hide()
+		Bg:Show()
+		check(f.onlyBag == nil and p0:IsShown(),
+			"and closing the window goes back to every bag")
+	end
+
 	-- WHAT IS BEHIND THE TAB, SAID ON THE TAB. The party dock's handle does
 	-- this: a glyph with a number under it, so a drawer that is shut still
 	-- tells you how many bags you are carrying and how many keys are on the

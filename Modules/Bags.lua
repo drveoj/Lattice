@@ -1119,25 +1119,35 @@ function WireBagTile(tile)
 		-- PurchaseSlot takes no argument, so a click on the one after would buy
 		-- a different slot from the one whose price it is showing.
 		if self.buyable then return Bags:AskBuyBankSlot() end
-		if button == "LeftButton" then receive(self) end
+		if button ~= "LeftButton" then return end
+		-- Holding something, a click puts it in; empty-handed, it shows this
+		-- bag on its own.
+		if _G.CursorHasItem and _G.CursorHasItem() then return receive(self) end
+		if self.bag then Bags:SoloBag(self.bag) end
 	end)
 
 	tile:SetScript("OnEnter", function(self)
+		Bags:HoverBag(self.bag)
 		if not self:GetRight() then return end
 		-- A Forever bank tab is not an item in a slot: it has a name and nothing
 		-- to drag.
 		if self.tab then
 			_G.GameTooltip:SetOwner(self, "ANCHOR_RIGHT")
 			_G.GameTooltip:SetText(self.tab.name or "")
+			_G.GameTooltip:AddLine(L.bags.fly.solo_hint, 0.6, 0.6, 0.6)
 			_G.GameTooltip:Show()
 			return
 		end
 		if not self.invSlot then return end
 		_G.GameTooltip:SetOwner(self, "ANCHOR_RIGHT")
 		pcall(_G.GameTooltip.SetInventoryItem, _G.GameTooltip, "player", self.invSlot)
+		_G.GameTooltip:AddLine(L.bags.fly.solo_hint, 0.6, 0.6, 0.6)
 		_G.GameTooltip:Show()
 	end)
-	tile:SetScript("OnLeave", function() _G.GameTooltip:Hide() end)
+	tile:SetScript("OnLeave", function()
+		Bags:HoverBag(nil)
+		_G.GameTooltip:Hide()
+	end)
 	return tile
 end
 
@@ -1288,8 +1298,21 @@ local function FlyRowPool(fly, n)
 		row.sub = W.Text(row, "bagBagSub", "LEFT")
 		row.sub:SetPoint("BOTTOMLEFT", row.tile, "BOTTOMRIGHT", 10, 1)
 
-		row:SetScript("OnEnter", function(self) self.bg:SetAlpha(1) end)
-		row:SetScript("OnLeave", function(self) self.bg:SetAlpha(0) end)
+		-- The whole row is the bag, not just its tile: hovering it lights the
+		-- bag's items in the grid, and clicking it shows that bag alone.
+		row:SetScript("OnEnter", function(self)
+			self.bg:SetAlpha(1)
+			Bags:HoverBag(self.tile.bag)
+		end)
+		row:SetScript("OnLeave", function(self)
+			self.bg:SetAlpha(self.selected and 1 or 0)
+			Bags:HoverBag(nil)
+		end)
+		row:SetScript("OnMouseUp", function(self, button)
+			if button == "LeftButton" then
+				self.tile:GetScript("OnClick")(self.tile, button)
+			end
+		end)
 
 		fly.rows[n] = row
 	end
@@ -1316,7 +1339,7 @@ local function SetDrawerLive(fly, live)
 		if row.tile then row.tile:EnableMouse(live) end
 		-- A row hovered as the drawer starts closing keeps its highlight
 		-- otherwise: OnLeave never fires for a frame that stops taking mouse.
-		if not live and row.bg then row.bg:SetAlpha(0) end
+		if not live and row.bg then row.bg:SetAlpha(row.selected and 1 or 0) end
 	end
 	for _, b in pairs(fly.keyButtons or {}) do b:EnableMouse(live) end
 end
@@ -1597,6 +1620,13 @@ local function BuildFrame(kind)
 		-- directly. A bank window that goes away without CloseBankFrame leaves
 		-- the server believing the player is still standing at the banker.
 		if self.kind == "bank" then Bags:HideBank() end
+		-- One bag on its own is a look for now, not a setting: the window
+		-- opens on everything again.
+		if self.onlyBag then
+			self.onlyBag = nil
+			self.dirty = true
+		end
+		Bags:HoverBag(nil)
 	end)
 
 	return frame
@@ -1655,7 +1685,26 @@ function Bags:Rebuild(frame)
 		return special[word]
 	end
 
-	for _, bag in ipairs(BagListFor(frame.kind)) do
+	-- ONE BAG ON ITS OWN, when a bag tile was clicked. The grid is sorted by
+	-- category, so nothing else says which bag an item is in - and a bag has
+	-- to be emptied before the game will let you swap it. Its free slots show
+	-- even with the setting off, so you can see when it is empty. A bag that
+	-- has gone (sold, swapped) lets the view go back to all of them.
+	local bags = BagListFor(frame.kind)
+	if frame.onlyBag then
+		local still = false
+		for _, bag in ipairs(bags) do
+			if bag == frame.onlyBag then still = true end
+		end
+		frame.onlyBag = still and frame.onlyBag or nil
+		if frame.onlyBag then bags = { frame.onlyBag } end
+	end
+	local showEmpty = cfg.showEmpty or frame.onlyBag ~= nil
+	for bag, proxy in pairs(frame.proxies) do
+		proxy:SetShown(frame.onlyBag == nil or bag == frame.onlyBag)
+	end
+
+	for _, bag in ipairs(bags) do
 		local n = SlotsIn(bag)
 		total = total + n
 		local word = FamilyWord(BagFamily(bag))
@@ -1749,7 +1798,7 @@ function Bags:Rebuild(frame)
 		local s = special[word]
 		local list = {}
 		for _, b in ipairs(s.items) do list[#list + 1] = b end
-		if cfg.showEmpty then
+		if showEmpty then
 			for _, b in ipairs(s.empties) do list[#list + 1] = b end
 		end
 		Section(FamilyLabel(word):upper(), list,
@@ -1759,7 +1808,7 @@ function Bags:Rebuild(frame)
 	-- FREE is the slots you can put ANYTHING in. A quiver's empty slots are not
 	-- those, and shown in the same block they read as room the player has not
 	-- got - which is why they went up there with the bag they belong to.
-	if cfg.showEmpty then Section(L.bags.section.free, empties) end
+	if showEmpty then Section(L.bags.section.free, empties) end
 
 	frame.labels:HideFrom(labelN + 1)
 
@@ -1930,7 +1979,7 @@ function Bags:RefreshFooter(frame)
 				-- a transparent one, and buying it must not leave a hole.
 				tile:SetFillColor(c.glass)
 				tile:SetEdgeShown(true)
-				tile:SetEdgeColor(c.glassEdge)
+				tile:SetEdgeColor(frame.onlyBag == bag and c.accent or c.glassEdge)
 				tile:SetAlpha(1)
 			else
 				-- Purchasable: an outline with a price in it, never a filled
@@ -2034,7 +2083,8 @@ function Bags:RefreshTabFooter(frame)
 			tile = BuildBagTile(foot, TILE, 9)
 			foot.tiles[i] = tile
 		end
-		BindBagTile(tile, nil, nil)
+		-- The tab's ID is its bag id, so it can be shown on its own like a bag.
+		BindBagTile(tile, data.ID, nil)
 		tile.tab = data
 		Place(tile)
 
@@ -2047,7 +2097,7 @@ function Bags:RefreshTabFooter(frame)
 		tile.price:Hide()
 		tile:SetFillColor(c.glass)
 		tile:SetEdgeShown(true)
-		tile:SetEdgeColor(c.glassEdge)
+		tile:SetEdgeColor(frame.onlyBag == data.ID and c.accent or c.glassEdge)
 		tile:SetAlpha(1)
 		tile:Show()
 	end
@@ -2150,8 +2200,12 @@ function Bags:RefreshFlyout(frame)
 		if named then sub = slots .. " \194\183 " .. named end
 		row.sub:SetText(sub)
 		W.Color(row.sub, c.textDim)
+		-- The bag shown on its own keeps its row lit and its tile ringed, so
+		-- there is always a visible way back to all of them.
+		row.selected = (frame.onlyBag == bag)
 		row.bg:SetFillColor(c.rowHover)
-		row.bg:SetAlpha(0)
+		row.bg:SetAlpha(row.selected and 1 or 0)
+		if row.selected then row.tile:SetEdgeColor(c.accent) end
 		row:Show()
 
 		y = y + FLY_ROW_H + FLY_GAP
@@ -2559,6 +2613,48 @@ function Bags:SetFilter(frame, text)
 	frame.filter = text
 	frame.search.placeholder:SetShown(text == "")
 	self:Rebuild(frame)
+end
+
+-- ---------------------------------------------------------------------------
+-- one bag at a time
+-- ---------------------------------------------------------------------------
+
+--- How far the other bags' items step back while one bag is hovered.
+local BAG_DIM = 0.25
+
+--- The open window that draws this bag, or nil.
+local function WindowOf(bag)
+	for _, f in pairs(Bags.frames or {}) do
+		for _, b in ipairs(BagListFor(f.kind)) do
+			if b == bag then return f end
+		end
+	end
+end
+
+--- Light one bag's items and dim the rest, or put them all back with nil.
+--
+--  On the bag's PROXY rather than on each button: every item button is
+--  parented to its bag's proxy, so one alpha per bag dims them all, and the
+--  buttons' own alpha (junk, locked, search) is left alone underneath.
+function Bags:HoverBag(bag)
+	local target = bag and WindowOf(bag)
+	for _, f in pairs(self.frames or {}) do
+		local focus = (f == target) and bag or nil
+		if f.hoverBag ~= focus then
+			f.hoverBag = focus
+			for b, proxy in pairs(f.proxies) do
+				proxy:SetAlpha((focus == nil or b == focus) and 1 or BAG_DIM)
+			end
+		end
+	end
+end
+
+--- Show only this bag's items, or everything again if it already is.
+function Bags:SoloBag(bag)
+	local f = WindowOf(bag)
+	if not f then return end
+	f.onlyBag = (f.onlyBag ~= bag) and bag or nil
+	self:Rebuild(f)
 end
 
 -- ---------------------------------------------------------------------------
