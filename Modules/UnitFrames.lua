@@ -118,6 +118,55 @@ local CLICK_NAME = {
 	targettarget = "TargetOfTargetFrame", focus = "FocusFrame",
 }
 
+--- Lay a capsule out facing one way: mirror = true puts the orb on the right
+--  and the text right-aligned, as the target's is by default. Runs at build
+--  and again whenever the capsule flips sides (UF:ApplyFacing).
+local function FaceCapsule(f, mirror)
+	mirror = mirror and true or false
+	if f.mirror == mirror then return end
+	f.mirror = mirror
+
+	local padInner = 10
+	local L_, R_ = "LEFT", "RIGHT"
+	local near, far = mirror and R_ or L_, mirror and L_ or R_
+	local dir = mirror and -1 or 1
+
+	f.orb:ClearAllPoints()
+	f.orb:SetPoint(near, f, near, dir * padInner, 0)
+
+	local block = f.block
+	block:ClearAllPoints()
+	block:SetPoint("TOP", f, "TOP", 0, -11)
+	block:SetPoint("BOTTOM", f, "BOTTOM", 0, 11)
+	block:SetPoint(near, f.orb, far, dir * 13, 0)
+
+	f.name:ClearAllPoints()
+	f.name:SetPoint("TOP" .. near, block, "TOP" .. near, 0, 0)
+	f.name:SetJustifyH(near)
+
+	f.sub:ClearAllPoints()
+	f.sub:SetPoint(near, f.name, far, dir * 8, 0)
+	f.sub:SetJustifyH(near)
+
+	f.health:ClearAllPoints()
+	f.health:SetPoint("TOP" .. near, f.name, "BOTTOM" .. near, 0, -4)
+	f.health:SetReverseFill(mirror)
+	f.health:SetAbsorbReverse(mirror)
+
+	f.power:ClearAllPoints()
+	f.power:SetPoint("TOP" .. near, f.health, "BOTTOM" .. near, 0, -4)
+	f.power:SetReverseFill(mirror)
+
+	-- The numbers past the bars' far end.
+	f.hpText:ClearAllPoints()
+	f.hpText:SetPoint(near, f.health, far, dir * 12, 0)
+	f.hpText:SetJustifyH(far)
+	f.mpText:ClearAllPoints()
+	f.mpText:SetPoint(near, f.power, far, dir * 12, 0)
+	f.mpText:SetJustifyH(far)
+end
+UF.FaceCapsule = FaceCapsule
+
 --- mirror = true builds the target variant: orb on the right, text right-aligned.
 local function BuildCapsule(unit, mirror)
 	local cfg = A.Config:Module("unitframes")
@@ -138,25 +187,23 @@ local function BuildCapsule(unit, mirror)
 	local f = CreateFrame("Frame", nil, UIParent)
 	f:SetSize(cfg.width, cfg.height)
 	f.unit = unit
-	f.mirror = mirror
+	-- The target's look (percentage, tinted glass), kept whichever way the
+	-- capsule faces. f.mirror is the facing, and it can flip.
+	f.targetLook = mirror and true or false
 
 	local glass = Glass.CreatePill(f, { shadow = A.db.profile.glass.shadow })
 	glass:SetAllPoints(f)
 	glass:_Resize()
 	f.glass = glass
 
-	local padInner = 10
 	local orbSize = cfg.orbSize
 
 	-- Everything below parents to the *glass* so it draws above the glass's own
 	-- textures, but anchors to the *core* so it ignores the glass's height.
+	-- Where each piece sits is LayoutCapsule's, below, because the capsule can
+	-- flip sides after it is built.
 	-- orb -------------------------------------------------------------------
 	local orb = W.CreateOrb(glass, { size = orbSize, portrait = cfg.showPortrait })
-	if mirror then
-		orb:SetPoint("RIGHT", f, "RIGHT", -padInner, 0)
-	else
-		orb:SetPoint("LEFT", f, "LEFT", padInner, 0)
-	end
 	f.orb = orb
 
 	-- THE DECORATORS, riding the orb the way they ride a party member's
@@ -176,20 +223,9 @@ local function BuildCapsule(unit, mirror)
 	-- text + bars block -----------------------------------------------------
 	local block = CreateFrame("Frame", nil, glass)
 	block:SetWidth(cfg.barWidth)
-	block:SetPoint("TOP", f, "TOP", 0, -11)
-	block:SetPoint("BOTTOM", f, "BOTTOM", 0, 11)
-	if mirror then
-		block:SetPoint("RIGHT", orb, "LEFT", -13, 0)
-	else
-		block:SetPoint("LEFT", orb, "RIGHT", 13, 0)
-	end
 	f.block = block
 
-	local justify = mirror and "RIGHT" or "LEFT"
-	local anchor  = mirror and "TOPRIGHT" or "TOPLEFT"
-
-	local name = W.Text(block, "unitName", justify)
-	name:SetPoint(anchor, block, anchor, 0, 0)
+	local name = W.Text(block, "unitName", "LEFT")
 	-- Never wraps, on any path. The health bar is anchored to this line's
 	-- bottom edge, so a name that took two lines would push the bars down out of
 	-- the capsule - and the whole point of the collapse chain is that the frame
@@ -197,26 +233,17 @@ local function BuildCapsule(unit, mirror)
 	name:SetWordWrap(false)
 	f.name = name
 
-	local sub = W.Text(block, "unitSub", justify)
-	if mirror then
-		sub:SetPoint("RIGHT", name, "LEFT", -8, 0)
-	else
-		sub:SetPoint("LEFT", name, "RIGHT", 8, 0)
-	end
+	local sub = W.Text(block, "unitSub", "LEFT")
 	W.Color(sub, Palette.c.textDim)
 	f.sub = sub
 
 	local health = W.CreateBar(block, { height = 7 })
-	health:SetPoint(mirror and "TOPRIGHT" or "TOPLEFT", name, mirror and "BOTTOMRIGHT" or "BOTTOMLEFT", 0, -4)
 	health:SetWidth(cfg.barWidth)
-	health:SetReverseFill(mirror and true or false)
 	health:AddAbsorb(mirror and true or false)
 	f.health = health
 
 	local power = W.CreateBar(block, { height = 5 })
-	power:SetPoint(mirror and "TOPRIGHT" or "TOPLEFT", health, mirror and "BOTTOMRIGHT" or "BOTTOMLEFT", 0, -4)
 	power:SetWidth(cfg.barWidth)
-	power:SetReverseFill(mirror and true or false)
 	f.power = power
 	if not cfg.showPower then power:Hide() end
 
@@ -228,23 +255,15 @@ local function BuildCapsule(unit, mirror)
 	-- unit with no power bar the single line sits where the first of two would
 	-- have been rather than beside the one bar that exists. Anchoring per bar is
 	-- self-correcting - hide the power bar and the health number stays put.
-	local hpText = W.Text(glass, "unitValue", mirror and "LEFT" or "RIGHT")
+	local hpText = W.Text(glass, "unitValue", "RIGHT")
 	hpText:SetWidth(40)
-	if mirror then
-		hpText:SetPoint("RIGHT", health, "LEFT", -12, 0)
-	else
-		hpText:SetPoint("LEFT", health, "RIGHT", 12, 0)
-	end
 	f.hpText = hpText
 
-	local mpText = W.Text(glass, "unitValueAlt", mirror and "LEFT" or "RIGHT")
+	local mpText = W.Text(glass, "unitValueAlt", "RIGHT")
 	mpText:SetWidth(40)
-	if mirror then
-		mpText:SetPoint("RIGHT", power, "LEFT", -12, 0)
-	else
-		mpText:SetPoint("LEFT", power, "RIGHT", 12, 0)
-	end
 	f.mpText = mpText
+
+	FaceCapsule(f, mirror)
 
 	-- interaction -----------------------------------------------------------
 	-- A secure unit button so left-click targets and right-click opens the unit
@@ -351,6 +370,7 @@ end
 local function BuildSpine(player)
 	local spine = CreateFrame("Frame", nil, player)
 	spine:SetPoint("LEFT", player, "RIGHT", 0, 0)
+	spine.playerRight = false
 	spine:SetSize(SPINE_MIN, (SPINE_OFF + LANE_H) * 2)
 	spine.lines = { Hairline(spine, SPINE_OFF), Hairline(spine, -SPINE_OFF) }
 	return spine
@@ -360,6 +380,40 @@ end
 --  frame stays, because your lane hangs off it whether there is a target or not.
 local function SetSpineLines(spine, on)
 	for _, l in ipairs(spine.lines) do l:SetShown(on and true or false) end
+end
+
+--- Which end of the lane a cast leaves from: the left (the player's own,
+--  by default) or the right (the target's). The fill, its cap and the label
+--  all start at that end. Runs at build and when the pair swaps sides.
+local function FaceLane(f, fromRight)
+	fromRight = fromRight and true or false
+	if f.fromRight == fromRight then return end
+	f.fromRight = fromRight
+	local origin = fromRight and "RIGHT" or "LEFT"
+	local lead = fromRight and "LEFT" or "RIGHT"
+	local fill = f.bar:GetStatusBarTexture()
+
+	f.bar:SetReverseFill(fromRight)
+	f.cap:ClearAllPoints()
+	f.cap:SetPoint("CENTER", fill, lead, 0, 0)
+	if f.lockedCap then
+		f.lockedCap:ClearAllPoints()
+		f.lockedCap:SetPoint("CENTER", fill, lead, 0, 0)
+	end
+
+	-- Above the player's lane, below the target's.
+	local mine = (f.unit == "player")
+	local v = mine and "BOTTOM" or "TOP"
+	local gap = mine and LABEL_GAP or -LABEL_GAP
+	local first, second = f.spellName, f.time
+	if fromRight then first, second = f.time, f.spellName end
+	local toward = fromRight and -4 or 4
+	f.spellName:ClearAllPoints()
+	f.time:ClearAllPoints()
+	f.spellName:SetJustifyH(origin)
+	f.time:SetJustifyH(origin)
+	first:SetPoint(v .. origin, f, (mine and "TOP" or "BOTTOM") .. origin, 0, gap)
+	second:SetPoint(v .. origin, first, v .. lead, toward, 0)
 end
 
 --- One lane. `f.unit`, `f.state`, `f.bar`, `f.spellName` and `f.time` are the
@@ -381,9 +435,6 @@ local function BuildLane(spine, unit)
 	local bar = W.CreateBar(f, { height = LANE_H, smooth = false, rounded = false })
 	bar:SetAllPoints(f)
 	bar.bg:Hide()
-	-- Filling away from its origin: your edge on the left, the target's on the
-	-- right.
-	bar:SetReverseFill(not mine)
 	f.bar = bar
 	local fill = bar:GetStatusBarTexture()
 
@@ -391,12 +442,11 @@ local function BuildLane(spine, unit)
 	-- the tip is a half-round and travels with the fill - the client's included,
 	-- when a duration object animates it. Not a mask on the fill: a mask is a
 	-- stretched texture, and its ends would change shape as the lane grew.
-	local lead = mine and "RIGHT" or "LEFT"
+	-- Placed by FaceLane.
 	local function Cap(sub)
 		local t = bar:CreateTexture(nil, "ARTWORK", nil, sub)
 		t:SetTexture(Media.texture.bar)
 		t:SetSize(LANE_H, LANE_H)
-		t:SetPoint("CENTER", fill, lead, 0, 0)
 		W.AddMask(t, bar, Media.texture.circleMask, t)
 		return t
 	end
@@ -425,21 +475,17 @@ local function BuildLane(spine, unit)
 	flash:Hide()
 	f.flash = flash
 
-	-- The label, at the origin, reading in the fill direction: above your lane
-	-- from the left, below the target's from the right.
+	-- The label, at the origin, reading in the fill direction: above your lane,
+	-- below the target's.
 	local label = CreateFrame("Frame", nil, f)
 	label:SetAllPoints(f)
 	f.label = label
-	f.spellName = W.Text(label, "laneLabel", mine and "LEFT" or "RIGHT")
-	f.time = W.Text(label, "laneLabel", mine and "LEFT" or "RIGHT")
-	if mine then
-		f.spellName:SetPoint("BOTTOMLEFT", f, "TOPLEFT", 0, LABEL_GAP)
-		f.time:SetPoint("BOTTOMLEFT", f.spellName, "BOTTOMRIGHT", 4, 0)
-	else
-		f.time:SetPoint("TOPRIGHT", f, "BOTTOMRIGHT", 0, -LABEL_GAP)
-		f.spellName:SetPoint("TOPRIGHT", f.time, "TOPLEFT", -4, 0)
-	end
+	f.spellName = W.Text(label, "laneLabel", "LEFT")
+	f.time = W.Text(label, "laneLabel", "LEFT")
 
+	-- Your lane leaves from the left end, the target's from the right, until
+	-- the pair swaps sides.
+	FaceLane(f, not mine)
 	f:Hide()
 	return f
 end
@@ -451,14 +497,48 @@ end
 local FOCUS_LANE = 100
 local function BuildFocusLane(focus)
 	local host = CreateFrame("Frame", nil, focus)
-	host:SetPoint("RIGHT", focus, "LEFT", 0, 0)
 	host:SetSize(FOCUS_LANE, (SPINE_OFF + LANE_H) * 2)
 	local f = BuildLane(host, "focus")
 	f:ClearAllPoints()
 	f:SetPoint("LEFT", host, "LEFT", 0, 0)
 	f:SetPoint("RIGHT", host, "RIGHT", 0, 0)
 	f.host = host
+	UF.FaceFocusLane(f, focus.mirror)
 	return f
+end
+
+--- The focus's lane leaves the edge its bars run toward: the left edge when
+--  the orb is on the right, and the other way round.
+function UF.FaceFocusLane(f, mirror)
+	if not f then return end
+	local focus = f.host:GetParent()
+	f.host:ClearAllPoints()
+	if mirror then
+		f.host:SetPoint("RIGHT", focus, "LEFT", 0, 0)
+	else
+		f.host:SetPoint("LEFT", focus, "RIGHT", 0, 0)
+	end
+	FaceLane(f, mirror)
+end
+
+--- The spine and both lanes for the pair's sides. playerRight puts the
+--  spine off the player's left edge, the player's lane leaving from its
+--  right end and the target's from its left.
+function UF:FaceSpine(playerRight)
+	local spine = self.spine
+	if not spine then return end
+	playerRight = playerRight and true or false
+	if spine.playerRight ~= playerRight then
+		spine.playerRight = playerRight
+		spine:ClearAllPoints()
+		if playerRight then
+			spine:SetPoint("RIGHT", self.player, "LEFT", 0, 0)
+		else
+			spine:SetPoint("LEFT", self.player, "RIGHT", 0, 0)
+		end
+	end
+	if self.cast then FaceLane(self.cast, playerRight) end
+	if self.targetCast then FaceLane(self.targetCast, not playerRight) end
 end
 
 -- ---------------------------------------------------------------------------
@@ -686,7 +766,7 @@ local function UpdateHealth(f)
 	if dead then
 		f.hpText:SetText(_G.DEAD or "Dead")
 		W.Color(f.hpText, c.textFaint)
-	elseif f.mirror then
+	elseif f.targetLook then
 		-- The concept puts a percentage on the target, an absolute on the player.
 		f.hpText:SetText(string.format("%d%%", math.floor(cur / max * 100 + 0.5)))
 		W.Color(f.hpText, c.targetText)
@@ -731,7 +811,7 @@ local function UpdatePower(f)
 	local colors = Palette:PowerColor(unit)
 	f.power:SetColors(colors)
 
-	if f.mirror then
+	if f.targetLook then
 		f.mpText:SetText("")
 	else
 		f.mpText:SetText(W.Short(cur))
@@ -797,7 +877,7 @@ end
 local function UpdateSkin(f)
 	local c = Palette.c
 	local tint = A.Config:Module("unitframes").reactionTint ~= false
-	if f.mirror then
+	if f.targetLook then
 		f.glass:SetFillColor(c.targetGlass)
 		f.glass:SetEdgeColor(tint and Palette:ReactionEdge(f.unit) or c.glassEdge)
 		W.Color(f.name, c.targetText)
@@ -1201,10 +1281,19 @@ function UF:MeasureSpine()
 	if not spine then return end
 	local cfg = A.Config:Module("unitframes")
 	local w = cfg.gap or SPINE_MIN
-	local pr, tl = self.player:GetRight(), self.target:GetLeft()
+	-- The facing edges: the player's right and the target's left, or the
+	-- other way round once the pair has swapped sides.
+	local pr, tl
+	if spine.playerRight then
+		pr, tl = self.target:GetRight(), self.player:GetLeft()
+	else
+		pr, tl = self.player:GetRight(), self.target:GetLeft()
+	end
 	if pr and tl then
 		local ps = self.player:GetEffectiveScale()
-		w = (tl * self.target:GetEffectiveScale() - pr * ps) / ps
+		local a, b = self.player, self.target
+		if spine.playerRight then a, b = b, a end
+		w = (tl * b:GetEffectiveScale() - pr * a:GetEffectiveScale()) / ps
 	end
 	w = math.max(SPINE_MIN, w)
 	-- The gap slider reads this back, so it shows a Ctrl-drag too.
@@ -1460,6 +1549,9 @@ function UF:RegisterMovers()
 		A.Movers:Register("focus", self.focus, self:FocusDefault(half),
 			L.movers.name.focus, { parent = "target", shape = "pill" })
 	end
+	-- Every drop and restore decides again which way each capsule faces.
+	A.Movers:OnPlaced(self, function() UF:ApplyFacing() end)
+	self:ApplyFacing()
 end
 
 --- BELOW THE TARGET AND WELL OUT TO ITS RIGHT, which is where the default UI
@@ -1583,6 +1675,70 @@ function UF:SatelliteOn(which)
 	local s = SATELLITES[which]
 	local f = s and self[s.field]
 	return (f ~= nil and not f.off) and true or false
+end
+
+-- ---------------------------------------------------------------------------
+-- facing away from the screen's centre line
+--
+-- With `faceOutward` on, a capsule's orb goes on the side nearer the screen
+-- edge, decided by which half its centre is in when it is dropped. Player and
+-- target are a pair and swap sides together: the player's centre decides, the
+-- target goes to its other side at the same spine length, and both face out.
+-- Off, every capsule faces its default way and the player is on the left.
+-- ---------------------------------------------------------------------------
+
+--- true if the frame's centre is right of the screen's, nil if unplaced.
+local function OnRightHalf(f)
+	local at = A.Movers and A.Movers.PointAt
+	local cx = at and at(f, "CENTER")
+	local mid = at and at(UIParent, "CENTER")
+	if not (cx and mid) then return nil end
+	return cx > mid
+end
+
+local facingWatch = {}
+function UF:ApplyFacing()
+	if not (self.player and self.target) then return end
+	-- The spine carries a protected bar, and the click buttons are secure.
+	if InCombatLockdown() then
+		A:RegisterEvent(facingWatch, "PLAYER_REGEN_ENABLED", function()
+			A:UnregisterEvent(facingWatch, "PLAYER_REGEN_ENABLED")
+			UF:ApplyFacing()
+		end)
+		return
+	end
+	local cfg = A.Config:Module("unitframes")
+	local auto = cfg.faceOutward ~= false
+
+	local playerRight = false
+	if auto then playerRight = OnRightHalf(self.player) or false end
+	local side = A.Movers and A.Movers:PairSide("target")
+	if side and (side < 0) ~= playerRight then A.Movers:FlipPair("target") end
+	if side == nil then playerRight = false end
+
+	FaceCapsule(self.player, playerRight)
+	FaceCapsule(self.target, not playerRight)
+	self:FaceSpine(playerRight)
+
+	for which, s in pairs(SATELLITES) do
+		local f = self[s.field]
+		if f and not f.off then
+			local m = s.mirror
+			if auto then
+				local r = OnRightHalf(f)
+				if r ~= nil then m = r end
+			end
+			FaceCapsule(f, m)
+			if which == "focus" then UF.FaceFocusLane(self.focusCast, f.mirror) end
+		end
+	end
+
+	self:MeasureSpine()
+	local AU = A:GetModule("auras")
+	if AU and AU.enabled and AU.Reanchor then AU:Reanchor() end
+	for _, f in ipairs(self.frames or {}) do
+		if not f.off then UpdateAll(f) end
+	end
 end
 
 --- The module's secure parts, up or taken away: the click buttons, watched

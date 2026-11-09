@@ -13411,6 +13411,11 @@ do
 	local UFm = A:GetModule("unitframes")
 	local reg = M.registry
 	local us = UIParent:GetEffectiveScale() or 1
+	-- These drag the pair across the screen's centre line, and with facing on
+	-- that would swap it. Facing has its own section below.
+	local ucfgFace = A.Config:Module("unitframes")
+	local wasFace = ucfgFace.faceOutward
+	ucfgFace.faceOutward = false
 
 	--- A frame's point in UIParent units, measured the way the client would.
 	local function at(f, which)
@@ -13698,6 +13703,112 @@ do
 	SlashCmdList["AETHERUI"]("reset")
 	check(next(A.db.profile.anchors) == nil and M:ParentOf("pet") == (UFm.pet and "player" or nil),
 		"reset puts every node back on its module's parent, with nothing saved")
+	ucfgFace.faceOutward = wasFace
+end
+
+print("== unit frames: facing away from the centre line ==")
+do
+	local M = A.Movers
+	local UFm = A:GetModule("unitframes")
+	local reg = M.registry
+	local us = UIParent:GetEffectiveScale() or 1
+	local at = M.PointAt
+	local ucfg = A.Config:Module("unitframes")
+	ucfg.faceOutward = true
+	SlashCmdList["AETHERUI"]("reset")
+	local mid = at(UIParent, "CENTER")
+
+	check(at(UFm.player, "CENTER") < mid and M:PairSide("target") == 1,
+		"by default the player is left of centre and the target on its right")
+	check(UFm.player.mirror == false and UFm.target.mirror == true,
+		"and each faces outward, orb on the side nearer the edge")
+
+	-- Drag the player's handle by dx and drop it.
+	local function drag(handle, dx)
+		M:Unlock()
+		__setCursor(500 * us, 300 * us)
+		handle:GetScript("OnDragStart")(handle)
+		__setCursor((500 + dx) * us, 300 * us)
+		local up = handle:GetScript("OnUpdate")
+		if up then up(handle, 0) end
+		handle:GetScript("OnDragStop")(handle)
+		M:Lock()
+	end
+
+	-- Move the player by dx and tell the listeners, as a drop does. The drag
+	-- itself is used once, below: in this mock UIParent's left is 100, not 0,
+	-- so every drag lands 100 further right than it was taken.
+	local function nudge(dx)
+		local p, rel, rp, x, y = UFm.player:GetPoint(1)
+		UFm.player:ClearAllPoints()
+		UFm.player:SetPoint(p, rel, rp, x + dx * us / UFm.player:GetEffectiveScale(), y)
+		M:NotifyPlaced()
+	end
+
+	-- A move that stays on the left half swaps nothing.
+	nudge(-20)
+	check(M:PairSide("target") == 1, "a move that stays on one half swaps nothing")
+
+	-- Across the centre line.
+	UFm:MeasureSpine()
+	local len0 = ucfg.gap
+	drag(reg.player.handle, mid - at(UFm.player, "CENTER") + 150)
+	check(at(UFm.player, "CENTER") > mid, "the player is dropped right of centre")
+	check(M:PairSide("target") == -1 and at(UFm.target, "CENTER") < at(UFm.player, "CENTER"),
+		"and the target swaps to its left")
+	local lat = A.db.profile.anchors.target.lat
+	check(lat.point == "RIGHT" and lat.relPoint == "LEFT" and math.abs(lat.x) == len0,
+		"at the same spine length, and that is what is saved ("
+		.. tostring(lat.point) .. " " .. tostring(lat.x) .. ")")
+	check(UFm.player.mirror == true and UFm.target.mirror == false,
+		"both still face outward: the player's orb on the right, the target's on the left")
+	check(UFm.player.targetLook == false and UFm.target.targetLook == true,
+		"and each keeps its own look - a flipped player is not drawn as a target")
+	check(UFm.player.health:GetReverseFill() == true,
+		"the player's bars now fill from the right")
+	check(UFm.spine.playerRight == true and select(3, UFm.spine:GetPoint(1)) == "LEFT",
+		"the spine hangs off the player's left edge")
+	if UFm.cast then
+		check(UFm.cast.fromRight == true, "and your cast leaves from the spine's right end")
+	end
+	if UFm.targetCast then
+		check(UFm.targetCast.fromRight == false, "and the target's from its left")
+	end
+	UFm:MeasureSpine()
+	check(ucfg.gap == len0, "the gap still reads the spine's length (" .. tostring(ucfg.gap) .. ")")
+
+	-- Ctrl-scroll still lengthens it with the pair this way round.
+	local h = reg.target.handle
+	_G.__ctrl = true
+	h:GetScript("OnMouseWheel")(h, 2)
+	_G.__ctrl = nil
+	check(math.abs(A.db.profile.anchors.target.lat.x) == len0 + 4,
+		"and Ctrl-scroll still stretches it (" .. tostring(A.db.profile.anchors.target.lat.x) .. ")")
+	M:StretchPair("target", len0)
+
+	-- The target's target hangs from the target and came along with it; it
+	-- faces by its own half.
+	if UFm.tot and not UFm.tot.off then
+		check(UFm.tot.mirror == (at(UFm.tot, "CENTER") > mid),
+			"the target's target faces by the half its own centre is on")
+	end
+
+	-- Back across.
+	nudge(mid - at(UFm.player, "CENTER") - 150)
+	check(M:PairSide("target") == 1 and UFm.player.mirror == false
+		and UFm.target.mirror == true, "and moving back swaps them back")
+
+	-- Off: everything faces its default way, and the player is on the left.
+	nudge(mid - at(UFm.player, "CENTER") + 150)
+	check(M:PairSide("target") == -1, "(swapped again)")
+	local opt = A.Options:Build().args.unitframes.args.faceOutward
+	check(opt ~= nil, "it is a setting")
+	opt.set({ arg = opt.arg, type = opt.type }, false)
+	check(M:PairSide("target") == 1 and UFm.player.mirror == false
+		and UFm.target.mirror == true,
+		"and turned off, the player goes back to the left, both facing their default way")
+	ucfg.faceOutward = true
+	SlashCmdList["AETHERUI"]("reset")
 end
 
 print("== commands: reading a frame there is no source for ==")

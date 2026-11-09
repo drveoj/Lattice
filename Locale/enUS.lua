@@ -1668,6 +1668,11 @@ L["options.unit_frames.gap.desc"] =
 	"The length of the spine. You can also stretch it while unlocked: Ctrl-drag "
 		.. "or Ctrl-scroll your frame or your target's. Not during a fight."
 L["options.unit_frames.gap.name"] = "Gap between player and target"
+L["options.unit_frames.face_outward.name"] = "Face away from the centre"
+L["options.unit_frames.face_outward.desc"] =
+	"Each frame puts its portrait on the side nearer the screen edge. Drag your "
+		.. "frame past the middle of the screen and your target swaps to the other "
+		.. "side of the spine."
 L["options.unit_frames.hide_blizzard.name"] = "Hide Blizzard's frames"
 L["options.unit_frames.off_draws_class_tinted"] =
 	"Off draws the level disc tinted by class instead."

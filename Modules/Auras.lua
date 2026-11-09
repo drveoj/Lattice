@@ -1374,6 +1374,25 @@ local function BuildTray(def, F)
 	return t
 end
 
+--- Point a tray's row the way its capsule faces: from the bars' start, toward
+--  the far end. Capsules can flip sides (UF:ApplyFacing), so this runs on
+--  every anchor pass, not only at build.
+local function FaceTray(t, mirror)
+	mirror = mirror and true or false
+	if t.mirror == mirror then return end
+	t.mirror = mirror
+	t.corner = (t.above and "BOTTOM" or "TOP") .. (mirror and "RIGHT" or "LEFT")
+	local c = t.container
+	if not c then return end
+	local FD = AnchorUtil.FlowDirection
+	c:ClearAllPoints()
+	c:SetPoint(t.corner, t.host, t.corner,
+		mirror and -CLIP_PAD or CLIP_PAD, t.above and CLIP_PAD or -CLIP_PAD)
+	pcall(c.SetFlowLayoutAnchorPoint, c, t.corner)
+	pcall(c.SetFlowLayoutGrowthDirection, c,
+		mirror and FD.Left or FD.Right, t.above and FD.Up or FD.Down)
+end
+
 function Aur:BuildForever()
 	local F = { trays = {}, paint = {}, tags = {}, timerRule = true }
 	self.forever = F
@@ -1424,6 +1443,7 @@ function Aur:AnchorForever()
 				host:SetFrameLevel(capsule:GetFrameLevel() + 6)
 			end
 			host:SetScale(1)
+			FaceTray(t, capsule.mirror)
 			-- The row's first square sits at the bars' start; the host is
 			-- CLIP_PAD bigger all round.
 			local edge = t.mirror and "RIGHT" or "LEFT"
@@ -1815,6 +1835,12 @@ function Aur:AnchorTrays()
 
 			d.opts.fillWidth = true
 			d.opts.inset = inset
+			-- The row runs the way the capsule faces, which can flip.
+			local m = capsule.mirror and true or false
+			if d.opts.mirror ~= m then
+				d.opts.mirror = m
+				if d.opts.cancel then d:Prime() else d:Arrange() end
+			end
 
 			A.Fader:Unregister(f)
 		else

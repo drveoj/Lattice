@@ -273,6 +273,9 @@ Config.defaults = {
 				width    = 345,
 				height   = 64,
 				gap      = 40,       -- the spine's length; never under its 40 minimum
+				-- Each capsule faces away from the screen's centre line, and
+				-- the player and target swap sides with the player's half.
+				faceOutward = true,
 				orbSize  = 46,
 				barWidth = 200,
 				showPower     = true,

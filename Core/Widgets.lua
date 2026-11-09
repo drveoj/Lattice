@@ -961,33 +961,52 @@ end
 --  `reverse` is the bar's own fill direction.
 function Bar:AddAbsorb(reverse)
 	if self.absorb then return self.absorb end
-	local fill = self:GetStatusBarTexture()
-	local lead = reverse and "LEFT" or "RIGHT"     -- where the health ends
-	local start = reverse and "RIGHT" or "LEFT"    -- where the health starts
 
 	local a = CreateFrame("Frame", nil, self)
 	a:SetAllPoints(self)
 
-	local gap = CreateFrame("Frame", nil, a)
-	gap:SetPoint("TOP" .. start, fill, "TOP" .. lead)
-	gap:SetPoint("BOTTOM" .. lead, self, "BOTTOM" .. lead)
-	gap:SetClipsChildren(true)
-	local past = AbsorbHalf(self, gap, reverse)
-	past:SetPoint("TOP" .. start, fill, "TOP" .. lead)
-	past:SetPoint("BOTTOM" .. start, fill, "BOTTOM" .. lead)
+	a.gap = CreateFrame("Frame", nil, a)
+	a.gap:SetClipsChildren(true)
+	a.past = AbsorbHalf(self, a.gap, reverse)
 
-	local over = CreateFrame("Frame", nil, a)
-	over:SetPoint("TOP" .. start, self, "TOP" .. start)
-	over:SetPoint("BOTTOM" .. lead, fill, "BOTTOM" .. lead)
-	over:SetClipsChildren(true)
-	local back = AbsorbHalf(self, over, not reverse)
-	back:SetPoint("TOP" .. lead, self, "TOP" .. lead)
-	back:SetPoint("BOTTOM" .. lead, self, "BOTTOM" .. lead)
+	a.over = CreateFrame("Frame", nil, a)
+	a.over:SetClipsChildren(true)
+	a.back = AbsorbHalf(self, a.over, not reverse)
 
-	a.past, a.back, a.halves = past, back, { past, back }
+	a.halves = { a.past, a.back }
 	a:Hide()
 	self.absorb = a
+	self:SetAbsorbReverse(reverse)
 	return a
+end
+
+--- Point the shield's halves for a bar filling the other way. A unit frame
+--  that flips sides calls this along with SetReverseFill.
+function Bar:SetAbsorbReverse(reverse)
+	local a = self.absorb
+	if not a then return end
+	reverse = reverse and true or false
+	if a.reverse == reverse then return end
+	a.reverse = reverse
+	local fill = self:GetStatusBarTexture()
+	local lead = reverse and "LEFT" or "RIGHT"     -- where the health ends
+	local start = reverse and "RIGHT" or "LEFT"    -- where the health starts
+
+	a.gap:ClearAllPoints()
+	a.gap:SetPoint("TOP" .. start, fill, "TOP" .. lead)
+	a.gap:SetPoint("BOTTOM" .. lead, self, "BOTTOM" .. lead)
+	a.past:SetReverseFill(reverse)
+	a.past:ClearAllPoints()
+	a.past:SetPoint("TOP" .. start, fill, "TOP" .. lead)
+	a.past:SetPoint("BOTTOM" .. start, fill, "BOTTOM" .. lead)
+
+	a.over:ClearAllPoints()
+	a.over:SetPoint("TOP" .. start, self, "TOP" .. start)
+	a.over:SetPoint("BOTTOM" .. lead, fill, "BOTTOM" .. lead)
+	a.back:SetReverseFill(not reverse)
+	a.back:ClearAllPoints()
+	a.back:SetPoint("TOP" .. lead, self, "TOP" .. lead)
+	a.back:SetPoint("BOTTOM" .. lead, self, "BOTTOM" .. lead)
 end
 
 --- `value` may be secret, and nothing here reads it. nil hides the shield.

@@ -555,6 +555,12 @@ local function UnitFramesGroup()
 				local UF = A:GetModule("unitframes")
 				if UF and UF.MeasureSpine then UF:MeasureSpine() end
 			end }),
+		faceOutward = toggle(L.options.unit_frames.face_outward.name,
+			L.options.unit_frames.face_outward.desc, at("faceOutward"),
+			{ defaultTrue = true, after = "none", onSet = function()
+				local UF = A:GetModule("unitframes")
+				if UF and UF.ApplyFacing then UF:ApplyFacing() end
+			end }),
 		orbSize = range(L.options.unit_frames.orb_size.name, nil, at("orbSize"), 28, 72, 1),
 		barWidth = range(L.common.bar_width, nil, at("barWidth"), 120, 380, 1),
 		showPower = toggle(L.common.show_power_bar, nil, at("showPower")),

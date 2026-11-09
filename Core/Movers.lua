@@ -124,11 +124,19 @@ local function MeasureBond(entry, pf)
 	if fs <= 0 or us <= 0 then return nil end
 
 	if entry.pairLead then
-		local x1 = PointAt(pf, "RIGHT")
-		local x2 = PointAt(f, "LEFT")
-		if not (x1 and x2) then return nil end
-		local len = math.max(entry.pairMin or 0, round((x2 - x1) * us / fs))
-		return { parent = entry.parent, point = "LEFT", relPoint = "RIGHT", x = len, y = 0 }
+		-- Either way round: the partner to the lead's right (the default) or,
+		-- once the pair has swapped sides, to its left.
+		local fc, pc = PointAt(f, "CENTER"), PointAt(pf, "CENTER")
+		if not (fc and pc) then return nil end
+		local right = fc >= pc
+		local x1 = PointAt(pf, right and "RIGHT" or "LEFT")
+		local x2 = PointAt(f, right and "LEFT" or "RIGHT")
+		local len = math.max(entry.pairMin or 0,
+			round((right and (x2 - x1) or (x1 - x2)) * us / fs))
+		if right then
+			return { parent = entry.parent, point = "LEFT", relPoint = "RIGHT", x = len, y = 0 }
+		end
+		return { parent = entry.parent, point = "RIGHT", relPoint = "LEFT", x = -len, y = 0 }
 	end
 
 	local point = f:GetPoint(1)
@@ -403,10 +411,23 @@ local function StretchPair(lead, partner, len, from)
 	local ls = lf:GetEffectiveScale() or us
 	local ps = pfr:GetEffectiveScale() or us
 	local was = from.len
-	local shift = (len - was) * ps / us / 2          -- UIParent units
+	local side = from.side or 1                      -- 1: partner on the right
+	local shift = (len - was) * ps / us / 2 * side   -- UIParent units
 	Place(lf, from.point, from.rel, from.relPoint, from.x - shift * us / ls, from.y)
-	Place(pfr, "LEFT", lf, "RIGHT", len, 0)
+	if side > 0 then
+		Place(pfr, "LEFT", lf, "RIGHT", len, 0)
+	else
+		Place(pfr, "RIGHT", lf, "LEFT", -len, 0)
+	end
 	return len
+end
+
+--- Which side of the lead the partner is on: 1 right, -1 left.
+local function PairSide(lead, partner)
+	local lc = PointAt(lead.frame, "CENTER")
+	local pc = PointAt(partner.frame, "CENTER")
+	if lc and pc and pc < lc then return -1 end
+	return 1
 end
 
 --- A stretched pair written down. The partner is MEASURED, not carried: saved
@@ -430,8 +451,36 @@ local function PairState(lead, partner)
 		local bond = MeasureBond(partner, lead.frame)
 		len = bond and bond.x or (partner.pairMin or 0)
 	end
+	-- Negative when the partner is on the lead's left.
+	len = math.abs(len)
 	return { point = point, rel = rel or UIParent, relPoint = relPoint or point,
-		x = x or 0, y = y or 0, len = len }
+		x = x or 0, y = y or 0, len = len, side = PairSide(lead, partner) }
+end
+
+--- Which side the target is on, from the target or the player: 1 right, -1
+--  left, nil for a node that is not half of a pair.
+function Movers:PairSide(name)
+	local entry = Movers.registry[name]
+	local lead, partner = entry and Lead(entry), entry and Partner(entry)
+	if not (lead and partner) or lead == partner then return nil end
+	return PairSide(lead, partner)
+end
+
+--- Swap the pair's sides: the partner goes to the other side of the lead at
+--  the same spine length, and the lead stays where it is.
+function Movers:FlipPair(name)
+	local entry = Movers.registry[name]
+	if not entry or InCombatLockdown() then return nil end
+	local lead, partner = Lead(entry), Partner(entry)
+	if not (lead and partner) or lead == partner then return nil end
+	local from = PairState(lead, partner)
+	if not from then return nil end
+	local len = from.len
+	from.side = -from.side
+	from.len = len   -- the same length: the lead does not move
+	StretchPair(lead, partner, len, from)
+	SaveStretch(lead, partner)
+	return from.side
 end
 
 --- Stretch the spine to a length, about its centre, and keep it. The inspector
@@ -1598,7 +1647,11 @@ local function CreateHandle(entry)
 			local xs, ys = SnapTargets(self._skip or { [f] = true })
 			local step = (cfg.grid ~= false) and FieldStep() or nil
 			if not onX and not spineX then
-				x, gx = SnapAxis(x, self._pairSpan or w, xs, step, dist, midX)
+				-- Snapped by the pair's left edge, which is the partner's when
+				-- the pair has swapped sides.
+				local off = self._pairOff or 0
+				x, gx = SnapAxis(x + off, self._pairSpan or w, xs, step, dist, midX)
+				x = x - off
 			end
 			if not onY then y, gy = SnapAxis(y, h2, ys, step, dist, UIParent:GetHeight() / 2) end
 
@@ -1661,8 +1714,10 @@ local function CreateHandle(entry)
 			local lead = Lead(partner)
 			local from = lead ~= partner and PairState(lead, partner)
 			if from then
+				-- Pulling either capsule away from the other lengthens it,
+				-- whichever side each is on.
 				self._stretch = { lead = lead, partner = partner, from = from,
-					sign = (entry == partner) and 1 or -1 }
+					sign = ((entry == partner) and 1 or -1) * (from.side or 1) }
 				self._dragging = true
 				self:SetScript("OnUpdate", Drag)
 				return
@@ -1690,13 +1745,23 @@ local function CreateHandle(entry)
 		-- spine's middle is - between the lead's right edge and the partner's
 		-- left. Snapping used the lead alone, so no point of the pair could
 		-- ever line up on the middle of the screen.
-		self._pairSpan, self._spineMid = nil, nil
+		-- Either way round: _pairOff is where the pair's left edge is from the
+		-- lead's, which is the partner's left once the pair has swapped sides.
+		self._pairSpan, self._spineMid, self._pairOff = nil, nil, 0
 		local pe = Partner(mover)
 		local pf = pe and pe ~= mover and pe.frame
 		if pf and pf:GetLeft() and f:GetRight() then
 			local ps = pf:GetEffectiveScale() or 1
-			self._pairSpan = pf:GetRight() * ps / us - self._origX
-			self._spineMid = (f:GetRight() * fs / us + pf:GetLeft() * ps / us) / 2 - self._origX
+			local ll, lr = self._origX, f:GetRight() * fs / us
+			local pl, pr = pf:GetLeft() * ps / us, pf:GetRight() * ps / us
+			if pl >= ll then
+				self._pairSpan = pr - ll
+				self._spineMid = (lr + pl) / 2 - ll
+			else
+				self._pairOff = pl - ll
+				self._pairSpan = lr - pl
+				self._spineMid = (pr + ll) / 2 - ll
+			end
 		end
 
 		f:SetMovable(true)
@@ -1777,6 +1842,7 @@ local function CreateHandle(entry)
 		SavePosition(mover)
 		SaveDescendants(mover.name)
 		RefreshJunctions()
+		Movers:NotifyPlaced()
 	end)
 
 	-- Nudge with the wheel for the last few pixels, in the node's own anchor -
@@ -1802,6 +1868,7 @@ local function CreateHandle(entry)
 		SavePosition(mover)
 		SaveDescendants(mover.name)
 		RefreshJunctions()
+		Movers:NotifyPlaced()
 	end)
 	h:EnableMouseWheel(true)
 
@@ -2011,6 +2078,7 @@ end
 function Movers:Restore(name)
 	local entry = Movers.registry[name]
 	if entry then RestorePosition(entry) end
+	Movers:NotifyPlaced()
 end
 
 --- Put a node hung from the screen in the mirror of its place, across the
@@ -2039,6 +2107,18 @@ end
 
 function Movers:RestoreAll()
 	for _, entry in pairs(Movers.registry) do RestorePosition(entry) end
+	Movers:NotifyPlaced()
+end
+
+--- Something that cares where frames ended up - the unit frames, which face
+--  away from the screen's centre line - asks to hear after every drop and
+--  every restore.
+Movers.placedListeners = Movers.placedListeners or {}
+function Movers:OnPlaced(owner, fn)
+	Movers.placedListeners[owner] = fn
+end
+function Movers:NotifyPlaced()
+	for _, fn in pairs(Movers.placedListeners) do pcall(fn) end
 end
 
 --- Every registered node takes its parent from the store again.
