@@ -5692,6 +5692,10 @@ end
 
 function UnitExists(u) return units[u] and units[u].exists or false end
 function UnitName(u) return units[u] and units[u].name end
+function UnitPlayerControlled(u)
+	local d = units[u]
+	return d ~= nil and (d.isPlayer or d.guidType == "Pet" or d.playerControlled) and true or false
+end
 function UnitLevel(u) return units[u] and units[u].level or 0 end
 function UnitIsPlayer(u) return units[u] and units[u].isPlayer or false end
 function UnitIsDeadOrGhost(u) return units[u] and units[u].dead or false end
@@ -36895,6 +36899,26 @@ section("nameplates: a pet's title is not every boar's title", function()
 	check(osub and osub:find("Grimtusk", 1, true) ~= nil,
 		"another hunter's boar says ITS owner, not the first one's (" ..
 		tostring(osub) .. ")")
+	__despawnPlate("nameplate7")
+
+	-- A WARLOCK'S DEMON IS A CREATURE, not a Pet, by its GUID. Two imps are
+	-- the same creature id with different owners (2026-11-10: Joe's imp said
+	-- "<Critta Gadgey's Minion>").
+	__spawnPlate("nameplate7", {
+		exists = true, name = "Gobrin", level = 3, reaction = 5,
+		hp = 100, hpMax = 100, creature = "Demon", npcID = 416,
+		playerControlled = true, title = "Critta Gadgey's Minion",
+	})
+	__despawnPlate("nameplate7")
+	__spawnPlate("nameplate7", {
+		exists = true, name = "Gobrin", level = 3, reaction = 5,
+		hp = 100, hpMax = 100, creature = "Demon", npcID = 416,
+		playerControlled = true, title = "Drveoj's Minion",
+	})
+	local imp = NP.byUnit.nameplate7
+	local isub = imp and imp.guild and imp.guild:GetText() or nil
+	check(isub and isub:find("Drveoj", 1, true) ~= nil,
+		"a warlock's imp says its own owner, not another imp's (" .. tostring(isub) .. ")")
 	__despawnPlate("nameplate7")
 
 	-- AND THE CACHE STILL DOES ITS JOB. Two of the same creature, different

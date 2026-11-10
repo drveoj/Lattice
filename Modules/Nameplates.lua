@@ -167,7 +167,12 @@ local function NpcTitle(unit)
 	-- THE GUID FIRST, because the cache is keyed off it.
 	local guid = UnitGUID and UnitGUID(unit)
 	if type(guid) == "nil" or A.IsSecret(guid) then return nil end
-	local key = TitleKey(guid)
+	-- ANYONE'S MINION IS KEYED BY ITS WHOLE GUID too. A warlock's demon has a
+	-- Creature GUID, not a Pet one, so every imp shared the first imp's
+	-- "<Somebody's Minion>" (2026-11-10, Joe's own imp).
+	local owned = UnitPlayerControlled and UnitPlayerControlled(unit)
+	local byGuid = type(owned) ~= "nil" and (A.IsSecret(owned) or owned == true)
+	local key = byGuid and guid or TitleKey(guid)
 
 	local seen = titleCache[key]
 	if seen ~= nil then return seen or nil end
