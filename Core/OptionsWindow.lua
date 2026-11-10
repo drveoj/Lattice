@@ -944,19 +944,28 @@ local NAV_FORM = {
 function OW:NavSlots()
 	if self.slots then return self.slots end
 	local slots, y = {}, NAV_TOP + 50
+	-- The step shrinks when there are too many pages for NAV_STEP: the last
+	-- node, plus the strand's 24 past it, ends 16 inside the window's foot.
+	-- The last node sits at top + (n - 1.5) * step + 36.
+	local n = 0
+	for _, p in ipairs(self.PAGES) do
+		if not p.system or not p.action then n = n + 1 end
+	end
+	local step = NAV_STEP
+	if n > 2 then step = math.min(NAV_STEP, (WIN_H - 16 - 24 - 36 - y) / (n - 1.5)) end
 	local hairY
 	for _, p in ipairs(self.PAGES) do
 		if not p.system then
 			slots[p.key] = y
-			y = y + NAV_STEP
+			y = y + step
 		end
 	end
-	hairY = y - NAV_STEP / 2 + 12
+	hairY = y - step / 2 + 12
 	y = hairY + 24
 	for _, p in ipairs(self.PAGES) do
 		if p.system and not p.action then
 			slots[p.key] = y
-			y = y + NAV_STEP
+			y = y + step
 		end
 	end
 	slots.__hair = hairY

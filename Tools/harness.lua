@@ -19060,6 +19060,14 @@ section("options window: pages are the tree, in the panel vocabulary", function(
 	check(gone and not has(cur, "__deltest"), "Delete removes it, and it leaves the list")
 	check(A.db:GetCurrentProfile() == home, "and this character keeps its own profile")
 
+	-- THE NAV STRAND ENDS INSIDE THE WINDOW (2026-11-10: it ran off the foot).
+	local deepest = 0
+	for k, y in pairs(OW:NavSlots()) do
+		if k ~= "__hair" then deepest = math.max(deepest, y) end
+	end
+	check(deepest + 24 <= (f:GetHeight() or 0) - 16 + 0.01,
+		"the nav strand ends inside the window (" .. deepest + 24 .. " of " .. tostring(f:GetHeight()) .. ")")
+
 	-- RESET PAGE: the module's defaults, for the page in view.
 	OW:Go("chat")
 	OW:Finish()
