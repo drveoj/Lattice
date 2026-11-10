@@ -1388,7 +1388,7 @@ local function ProfilesGroup()
 		note = note(L.options.profiles.note),
 		current = {
 			type = "select", name = L.options.profiles.current.name,
-			desc = L.options.profiles.current.desc, order = next_(),
+			desc = L.options.profiles.current.desc, order = next_(), control = "dropdown",
 			values = function() return ProfileNames(false) end,
 			get = function() return A.db:GetCurrentProfile() end,
 			set = function(_, v) A.db:SetProfile(v) end,
@@ -1404,7 +1404,7 @@ local function ProfilesGroup()
 		},
 		copy = {
 			type = "select", name = L.options.profiles.copy.name,
-			desc = L.options.profiles.copy.desc, order = next_(),
+			desc = L.options.profiles.copy.desc, order = next_(), control = "dropdown",
 			values = function() return ProfileNames(true) end,
 			get = function() return nil end,
 			set = function(_, v) A.db:CopyProfile(v) end,
@@ -1412,6 +1412,7 @@ local function ProfilesGroup()
 		dangerHeader = header(L.options.profiles.danger_header),
 		pick = {
 			type = "select", name = L.options.profiles.pick.name, order = next_(),
+			control = "dropdown",
 			values = function() return ProfileNames(true) end,
 			get = function()
 				if doomed and not ProfileNames(true)[doomed] then doomed = nil end

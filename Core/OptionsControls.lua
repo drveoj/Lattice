@@ -826,7 +826,9 @@ function C.Row(parent, node, w)
 	if t == "select" then
 		local choices = C.Choices(node)
 		if node.control == "swatches" then return SwatchRow(parent, node, w, choices) end
-		local short = #choices >= 2 and #choices <= 4
+		-- A list that changes while the page is open (profiles) is always a
+		-- dropdown: a segment row's choices are fixed when it is built.
+		local short = node.control ~= "dropdown" and #choices >= 2 and #choices <= 4
 		for _, ch in ipairs(choices) do
 			if #ch.label > 18 then short = false end
 		end

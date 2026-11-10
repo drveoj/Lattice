@@ -19015,6 +19015,36 @@ section("options window: pages are the tree, in the panel vocabulary", function(
 	check(resets == 1, "and the second click does it")
 	A.db.ResetProfile = real
 
+	-- PROFILES ARE DROPDOWNS, and a profile made or deleted while the page
+	-- is open shows in them (2026-11-10: a segment row kept its first list).
+	local PL = A.L.options.profiles
+	local rowsBy = {}
+	for _, r in ipairs(OW.view.rows) do
+		local n = r.node.name
+		if type(n) == "string" then rowsBy[n] = r end
+	end
+	local cur, pick = rowsBy[PL.current.name], rowsBy[PL.pick.name]
+	check(cur and cur.field and not cur.opts and pick and pick.field,
+		"the profile in use and the one to delete are dropdowns")
+	local home = A.db:GetCurrentProfile()
+	A.db:SetProfile("__deltest")
+	A.db:SetProfile(home)
+	local function has(row, name)
+		for _, ch in ipairs(A.OptionsControls.Choices(row.node)) do if ch.key == name then return true end end
+	end
+	check(has(cur, "__deltest") and has(pick, "__deltest"), "a new profile shows in both")
+	A.OptionsControls.Write(pick.node, "__deltest")
+	local del
+	for _, r in ipairs(OW.view.rows) do
+		if r.button and r.node.confirm and r ~= reset then del = r end
+	end
+	Click(del.button)
+	Click(del.button)
+	local gone = true
+	for _, n in ipairs(A.db:GetProfiles({})) do if n == "__deltest" then gone = false end end
+	check(gone and not has(cur, "__deltest"), "Delete removes it, and it leaves the list")
+	check(A.db:GetCurrentProfile() == home, "and this character keeps its own profile")
+
 	-- RESET PAGE: the module's defaults, for the page in view.
 	OW:Go("chat")
 	OW:Finish()
