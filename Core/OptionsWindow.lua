@@ -1326,16 +1326,20 @@ function OW:ShowPage(page, i)
 	-- The body.
 	for _, v in pairs(self.views) do v.frame:Hide() end
 	local v = self:View(page, self.sub)
+	-- The scroll frame clips, so it starts BLEED to the left of the rows: a
+	-- slider's thumb at its minimum, or a label centred under the first node,
+	-- hangs past the column's edge and was cut off.
+	local BLEED = 12
 	local sc = pg.scroll
 	sc:ClearAllPoints()
-	sc:SetPoint("TOPLEFT", pg, "TOPLEFT", PAD_L, -top)
+	sc:SetPoint("TOPLEFT", pg, "TOPLEFT", PAD_L - BLEED, -top)
 	sc:SetPoint("BOTTOMRIGHT", pg, "BOTTOMRIGHT", -PAD_R + 8, PAD_B + 50)
 	if v then
 		v.frame:ClearAllPoints()
-		v.frame:SetPoint("TOPLEFT", sc.child, "TOPLEFT", 0, 0)
+		v.frame:SetPoint("TOPLEFT", sc.child, "TOPLEFT", BLEED, 0)
 		v:Refresh()
 		v.frame:Show()
-		sc.child:SetSize(v.frame:GetWidth(), math.max(1, v.height + 12))
+		sc.child:SetSize(v.frame:GetWidth() + BLEED, math.max(1, v.height + 12))
 		self.view = v
 	end
 	sc:SetVerticalScroll(0)

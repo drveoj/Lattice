@@ -434,15 +434,10 @@ local function SegmentRow(parent, node, w, choices)
 	r.label = W.Text(r, "opControl", "LEFT")
 	r.label:SetPoint("TOPLEFT", r, "TOPLEFT", 0, 0)
 	local span = math.min(w, 120 * #choices)
-	r.line = Strand(r, 0.3, 1)
-	r.line:SetPoint("TOPLEFT", r, "TOPLEFT", 8, -28)
-	r.line:SetWidth(span - 16)
 	r.opts = {}
 	for i, ch in ipairs(choices) do
 		local b = CreateFrame("Button", nil, r)
 		b:SetSize(math.max(40, span / #choices), 34)
-		local x = #choices > 1 and (8 + (i - 1) * (span - 16) / (#choices - 1)) or span / 2
-		b:SetPoint("TOP", r, "TOPLEFT", x, -20)
 		b.d = Diamond(b, SEG)
 		b.d.fill:SetPoint("TOP", b, "TOP", 0, -1)
 		b.text = W.Text(b, "opHelp", "CENTER")
@@ -454,6 +449,19 @@ local function SegmentRow(parent, node, w, choices)
 			C.Write(node, ch.key)
 		end)
 		r.opts[i] = b
+	end
+	-- The end nodes sit in by half their label, so a label centred under its
+	-- node stays inside the row. The 3 allows for the bolder chosen label.
+	local function half(b) return math.max(8, math.ceil((b.text:GetStringWidth() or 0) / 2) + 3) end
+	local n = #r.opts
+	local left = n > 1 and half(r.opts[1]) or 8
+	local right = n > 1 and half(r.opts[n]) or 8
+	r.line = Strand(r, 0.3, 1)
+	r.line:SetPoint("TOPLEFT", r, "TOPLEFT", left, -28)
+	r.line:SetWidth(math.max(1, span - left - right))
+	for i, b in ipairs(r.opts) do
+		local x = n > 1 and (left + (i - 1) * (span - left - right) / (n - 1)) or span / 2
+		b:SetPoint("TOP", r, "TOPLEFT", x, -20)
 	end
 	Tip(r, node, true)
 	r:EnableMouse(true)
