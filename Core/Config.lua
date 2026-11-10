@@ -1186,8 +1186,47 @@ end
 --  exactly the sort of thing that should have to prove itself.
 Config.Migrate = Migrate
 
+--- AceDB r1419 keys a character by name and surname where the realm has
+--  regional unique names (WoW Forever). Older AceDB used "Name - Realm".
+--  Another addon's newer AceDB replaced ours mid-session, so a profile choice
+--  and the character's own data (db.char: the tour, the Toolbox) were saved
+--  under one key and read back under the other. Carry the old key's over once;
+--  anything already saved under the new key wins.
+local function FillGaps(into, from)
+	for k, v in pairs(from) do
+		if into[k] == nil then
+			into[k] = v
+		elseif type(into[k]) == "table" and type(v) == "table" then
+			FillGaps(into[k], v)
+		end
+	end
+end
+
+function Config.MoveProfileKey(sv)
+	if type(sv) ~= "table" then return end
+	if not (RegionalUniqueNamesEnabled and RegionalUniqueNamesEnabled()) then return end
+	local name, surname = UnitNameUnmodified("player")
+	local new = surname and (name .. " " .. tostring(surname)) or name
+	local old = UnitName("player") .. " - " .. GetRealmName()
+	if not new or old == new then return end
+
+	local keys = sv.profileKeys
+	if type(keys) == "table" and keys[old] ~= nil then
+		if keys[new] == nil then keys[new] = keys[old] end
+		keys[old] = nil
+	end
+
+	local char = sv.char
+	if type(char) == "table" and type(char[old]) == "table" then
+		if type(char[new]) == "table" then FillGaps(char[new], char[old])
+		else char[new] = char[old] end
+		char[old] = nil
+	end
+end
+
 function Config:Initialize()
 	local AceDB = LibStub("AceDB-3.0")
+	Config.MoveProfileKey(_G.LatticeDB)
 	-- LatticeDB, as the .toc declares: Lattice starts with fresh settings
 	-- (the rename plan, Joe's call) - WoW keeps saved variables per addon
 	-- folder, and the parent model's layout does not map onto 1.x positions.

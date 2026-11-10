@@ -5402,7 +5402,22 @@ function GetNumClasses() return 9 end
 function UnitFactionGroup() return "Horde", "Horde" end
 function UnitRace2() end
 function GetCurrentRegion() return 3 end
+function GetCurrentRegionName() return "EU" end
 function UnitSex() return 2 end
+-- Regional unique names: on Forever a character is "Name Surname", with no
+-- realm. AceDB r1419 keys profiles that way there.
+_G.__uniqueNames = _G.__flavour == "camelot"
+function RegionalUniqueNamesEnabled() return _G.__uniqueNames end
+function UnitNameUnmodified(u)
+	local n = UnitName(u)
+	if u == "player" and _G.__uniqueNames then return n, "Testsurname" end
+	return n
+end
+strlenutf8 = strlenutf8 or function(s) return #s end
+Enum = Enum or {}
+Enum.GameRule = Enum.GameRule or {
+	HardcoreRuleset = "HardcoreRuleset", RPRuleset = "RPRuleset", PvPRuleset = "PvPRuleset",
+}
 
 -- Verbatim from Blizzard_SharedXML/Vanilla/ClassColors.lua, which is the table
 -- THIS flavour loads. Three classes used to be enough and were not: anything
@@ -31374,6 +31389,40 @@ section("profiles: nothing keeps a reference to a config table", function()
 	check(bar2 == nil or bar2.cfg == back, "and the built bar reads it")
 	back.scale, back.rows = oldScale, oldRows
 	A:Reconfigure()
+
+	-- A profile choice saved under the old "Name - Realm" key moves to the
+	-- key AceDB r1419 reads on Forever, and never over a newer choice.
+	local was = _G.__uniqueNames
+	_G.__uniqueNames = true
+	local me = UnitName("player")
+	local old, new = me .. " - " .. GetRealmName(), me .. " Testsurname"
+	local sv = { profileKeys = { [old] = "Mine" } }
+	A.Config.MoveProfileKey(sv)
+	check(sv.profileKeys[new] == "Mine" and sv.profileKeys[old] == nil,
+		"an old character key's profile moves to the new key")
+	sv = { profileKeys = { [old] = "Default", [new] = "Mine" } }
+	A.Config.MoveProfileKey(sv)
+	check(sv.profileKeys[new] == "Mine" and sv.profileKeys[old] == nil,
+		"and a choice already under the new key wins")
+	-- Joe, 2026-11-10: the tour came back on every character. Its flag is in
+	-- db.char, under the same key.
+	sv = { char = { [old] = { onboard = { completed = true }, toolbox = { newsSeen = "2.1.4" } } } }
+	A.Config.MoveProfileKey(sv)
+	check(sv.char[new] and sv.char[new].onboard.completed == true and sv.char[old] == nil,
+		"the character's own data moves too, so the tour stays done")
+	sv = { char = {
+		[old] = { onboard = { completed = true, completedAt = 1 }, toolbox = { newsSeen = "2.1.4", pinned = { a = true } } },
+		[new] = { toolbox = { newsSeen = "2.2.0" } } } }
+	A.Config.MoveProfileKey(sv)
+	local c = sv.char[new]
+	check(c.onboard.completed == true and c.toolbox.newsSeen == "2.2.0" and c.toolbox.pinned.a
+		and sv.char[old] == nil,
+		"and where both exist, the old fills the gaps and the new wins")
+	_G.__uniqueNames = false
+	sv = { profileKeys = { [old] = "Mine" } }
+	A.Config.MoveProfileKey(sv)
+	check(sv.profileKeys[old] == "Mine", "without regional names nothing moves")
+	_G.__uniqueNames = was
 end)
 
 section("version check: says once when someone has a newer Lattice", function()
