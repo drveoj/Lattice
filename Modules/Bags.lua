@@ -3245,18 +3245,7 @@ function Bags:OnEnable()
 		end
 	end)
 
-	-- Deferred by a frame. SellJunk returns immediately unless MerchantFrame is
-	-- already shown, and that depends on Blizzard's handler for the same event
-	-- having run first. It does today; relying on the registration order of
-	-- somebody else's addon is not a thing worth relying on.
-	A:RegisterEvent(self, "MERCHANT_SHOW", function()
-		if _G.C_Timer and _G.C_Timer.After then
-			_G.C_Timer.After(0.1, function() Bags:SellJunk() end)
-		else
-			Bags:SellJunk()
-		end
-	end)
-	A:RegisterEvent(self, "MERCHANT_CLOSED", function() Bags:FinishSelling() end)
+	-- Selling junk is started by Conveniences, so it works with these bags off.
 
 	-- For several seconds after a loading screen the client answers nil for
 	-- things that are not nil, so nothing is drawn and nothing is cached across

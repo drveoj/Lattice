@@ -994,10 +994,6 @@ local function BagsGroup()
 			L.options.bags.free_section_foot_grid,
 			at("showEmpty"), { defaultTrue = true }),
 
-		sellHeader = header(L.options.bags.sell_header),
-		junkAutoSell = toggle(L.options.bags.junk_auto_sell.name,
-			L.options.bags.sells_every_poor_quality, at("junkAutoSell")),
-
 		lootHeader = header(L.options.loot.header),
 		lootEnabled = toggle(L.options.loot.enabled.name, L.options.loot.enabled.desc,
 			{ "modules", "loot", "enabled" }),
@@ -1088,6 +1084,11 @@ local function ConveniencesGroup()
 		autoRepair = toggle(L.options.conveniences.auto_repair.name,
 			L.options.conveniences.repairs_everything_moment_open,
 			at("autoRepair")),
+
+		-- The flag is still the bags', where the JUNK section reads it; the
+		-- switch is here, where people look for it.
+		junkAutoSell = toggle(L.options.bags.junk_auto_sell.name,
+			L.options.bags.sells_every_poor_quality, { "modules", "bags", "junkAutoSell" }),
 	})
 end
 

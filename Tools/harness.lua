@@ -29147,6 +29147,25 @@ do
 
 	_G.MerchantFrame:Hide()
 	Bg.selling = nil
+
+	-- Joe, 2026-11-10: the switch is on Conveniences, and it sells with
+	-- Lattice's bags switched off.
+	local cv = A.Options:Build().args.conveniences.args.junkAutoSell
+	check(cv and cv.arg and cv.arg.path[2] == "bags" and cv.arg.path[3] == "junkAutoSell",
+		"the switch is on the Conveniences page")
+	check(not A.Options:Build().args.bags.args.junkAutoSell, "and not on the Bags page")
+	_G.__bags[0].slots[4] = { 3300, 1 }
+	_G.__used, _G.__pending = {}, {}
+	A:SetModuleEnabled("bags", false)
+	_G.MerchantFrame:Show()
+	fire("MERCHANT_SHOW")
+	_G.__drainTimers(10)
+	check(#_G.__used == 1, "opening a merchant sells junk with the bags off ("
+		.. #_G.__used .. ")")
+	_G.MerchantFrame:Hide()
+	fire("MERCHANT_CLOSED")
+	A:SetModuleEnabled("bags", true)
+	Bg.selling = nil
 	cfg.junkAutoSell = false
 end
 

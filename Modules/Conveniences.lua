@@ -1,9 +1,10 @@
 --[[--------------------------------------------------------------------------
 	AetherUI :: Conveniences
 
-	Two small things the game makes you wait for, and a switch each. Both are
-	OFF by default and both say why in the options, because neither is the kind
-	of thing to do to somebody without being asked:
+	Small things the game makes you wait for, and a switch each. All are OFF
+	by default and say why in the options, because none is the kind of thing
+	to do to somebody without being asked. Selling junk is here too; its code
+	is the bags module's, started from here. The first two:
 
 	  * INSTANT QUEST TEXT overrides a setting the client already has, under
 	    Interface, which the player may have chosen deliberately.
@@ -120,7 +121,24 @@ function CV:OnEnable()
 	-- MERCHANT_SHOW rather than the frame's OnShow: the event is the game
 	-- saying a merchant is open, and it arrives whether or not anything has
 	-- drawn a window for it yet.
-	A:RegisterEvent(self, "MERCHANT_SHOW", function() CV:Repair() end)
+	--
+	-- Junk is sold by the bags module's code, which works whether or not its
+	-- bags are on. Deferred a beat: SellJunk waits for MerchantFrame to be
+	-- shown, and that is Blizzard's handler for the same event.
+	A:RegisterEvent(self, "MERCHANT_SHOW", function()
+		CV:Repair()
+		local B = A:GetModule("bags")
+		if not (B and B.SellJunk) then return end
+		if _G.C_Timer and _G.C_Timer.After then
+			_G.C_Timer.After(0.1, function() B:SellJunk() end)
+		else
+			B:SellJunk()
+		end
+	end)
+	A:RegisterEvent(self, "MERCHANT_CLOSED", function()
+		local B = A:GetModule("bags")
+		if B and B.FinishSelling then B:FinishSelling() end
+	end)
 end
 
 function CV:OnDisable()

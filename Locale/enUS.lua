@@ -758,7 +758,6 @@ L["options.bags.panel_hugs_contents_up"] =
 	"The panel hugs its contents up to this, then the grid scrolls on "
 		.. "the wheel. There is no scroll bar."
 L["options.bags.quality_rim.name"] = "Colour slots by quality"
-L["options.bags.sell_header"] = "Junk"
 L["options.bags.sells_every_poor_quality"] =
 	"Sells every poor-quality item that has a value the moment you open "
 		.. "any merchant, one item at a time, and tells you what it made. Off "
