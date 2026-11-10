@@ -95,7 +95,7 @@ OW.PAGES = {
 		title = L.options.map.chat.title, desc = L.options.map.chat.desc },
 	{ key = "bags", form = "square", module = "bags", groups = { "bags" },
 		title = L.options.map.bags.title, desc = L.options.map.bags.desc },
-	{ key = "toolbox", form = "diamond", module = "toolbox", groups = { "toolbox", "fader", "zen" },
+	{ key = "toolbox", form = "diamond", module = "toolbox", groups = { "toolbox" },
 		title = L.options.map.toolbox.title, desc = L.options.map.toolbox.desc },
 	{ key = "minimap", form = "circle", module = "minimap", groups = { "minimap" },
 		unlock = { "minimap" },
@@ -128,7 +128,8 @@ OW.PAGES = {
 		title = L.options.map.skins.title, desc = L.options.map.skins.desc },
 	{ key = "profiles", system = true, groups = { "profiles" },
 		title = L.options.map.profiles.title, desc = L.options.map.profiles.desc },
-	{ key = "conveniences", system = true, groups = { "conveniences" },
+	-- Zen and its fade live here: nobody looked for them under the Toolbox (Joe).
+	{ key = "conveniences", system = true, groups = { "conveniences", "fader", "zen" },
 		title = L.options.map.conveniences.title, desc = L.options.map.conveniences.desc },
 	{ key = "unlock", system = true, action = "unlock",
 		title = L.options.map.unlock.title, desc = L.options.map.unlock.desc },

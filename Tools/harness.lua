@@ -19254,9 +19254,11 @@ section("options window: Zen can be found", function()
 	-- It was a section halfway down Idle fade, its switch called "Enabled".
 	local OW, f = OpenMap()
 	local subs = {}
-	for _, s in ipairs(OW:Subs(OW:Page("toolbox"))) do subs[#subs + 1] = s.label end
-	check(table.concat(subs, ", ") == "Toolbox, Idle fade, Zen",
-		"the Toolbox page has a Zen tab of its own (" .. table.concat(subs, ", ") .. ")")
+	-- Joe, 2026-11-10: under the Toolbox it was never where anyone looked.
+	for _, s in ipairs(OW:Subs(OW:Page("conveniences"))) do subs[#subs + 1] = s.label end
+	check(table.concat(subs, ", ") == "Conveniences, Idle fade, Zen",
+		"the Conveniences page has a Zen tab of its own (" .. table.concat(subs, ", ") .. ")")
+	check(#OW:Subs(OW:Page("toolbox")) <= 1, "and the Toolbox page no longer holds it")
 	local function ZenRows()
 		local zen, sw = 0, nil
 		for _, r in ipairs(OW.view.rows) do
@@ -19268,10 +19270,10 @@ section("options window: Zen can be found", function()
 		end
 		return zen, sw
 	end
-	OW:Go("toolbox", 2)
+	OW:Go("conveniences", 2)
 	OW:Finish()
 	check(ZenRows() == 0, "Idle fade holds only the fade")
-	OW:Go("toolbox", 3)
+	OW:Go("conveniences", 3)
 	OW:Finish()
 	local zen, sw = ZenRows()
 	check(zen > 20 and sw and sw.label:GetText() == "Zen mode",
@@ -19279,9 +19281,10 @@ section("options window: Zen can be found", function()
 		.. tostring(sw and sw.label:GetText()) .. ")")
 	OW:Search("zen")
 	local first = OW.results and OW.results[1]
-	check(first and first.name == "Zen mode" and first.page.key == "toolbox",
+	check(first and first.name == "Zen mode" and first.page.key == "conveniences",
 		"searching zen finds the switch first (" .. tostring(first and first.name) .. ")")
-	check(OW:Page("toolbox").desc:find("Zen", 1, true), "and the Toolbox card says Zen is there")
+	check(OW:Page("conveniences").desc:find("Zen", 1, true),
+		"and the Conveniences card says Zen is there")
 	OW:Search("")
 	A.Options:Close()
 end)
