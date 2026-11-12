@@ -16,6 +16,10 @@
 	So this module is a hook per style and no per-frame list, which is the whole
 	reason it is worth doing at all.
 
+	ON WOW FOREVER IT IS ONLY A TINT. Replacing Generate there tainted every
+	menu's layout, and a menu holding secret values broke; see "WoW Forever"
+	below.
+
 	THERE ARE TWO STYLES, and the difference cost a build. MenuStyle1Mixin is
 	the one a dropdown BUTTON opens - a setting in a panel. A right-click
 	CONTEXT menu, which is the one on your portrait and your pet's and the one
@@ -107,6 +111,42 @@ local function Generate(self)
 end
 
 -- ---------------------------------------------------------------------------
+-- WoW Forever: a tint, from outside the menu's own build
+--
+-- Our Generate in the mixin is Lattice code inside every menu Blizzard builds,
+-- and the menu's layout then runs tainted. A menu holding secret values (the
+-- damage meter's) does arithmetic on them in that layout and errors:
+-- "FrameUtil.lua:223: attempt to perform arithmetic on local 'frameLeft' (a
+-- secret number value, while execution tainted by 'Lattice')".
+--
+-- So on Forever the style's Generate is left as Blizzard's and only
+-- hooksecurefunc'd, which keeps the build secure. The hook paints nothing
+-- itself: it asks for a paint on the next frame, once the build is done. (Not
+-- the shared ticker: at 0.1 s, Blizzard's background would flash first.)
+-- Painting is recolouring the background textures Blizzard attached, in the
+-- skin's dialog fill. Nothing is created on the frame, which the compositor
+-- would refuse anyway.
+-- ---------------------------------------------------------------------------
+
+--- Blizzard's background, in our dialog fill.
+function MN:Paint(menu)
+	if menu.IsForbidden and menu:IsForbidden() then return end
+	local fill = A.Palette.c.dialogFill
+	if type(fill[1]) == "table" then fill = fill[1] end
+	for _, region in ipairs(A.Regions(menu)) do
+		if region:IsObjectType("Texture") then
+			region:SetColorTexture(fill[1], fill[2], fill[3], fill[4] or 1)
+		end
+	end
+end
+
+local function Generated(menu)
+	C_Timer.After(0, function()
+		if MN.enabled then MN:Paint(menu) end
+	end)
+end
+
+-- ---------------------------------------------------------------------------
 -- lifecycle
 -- ---------------------------------------------------------------------------
 
@@ -131,6 +171,20 @@ function MN:OnEnable()
 		return
 	end
 	self.absent = nil
+
+	-- A hook can't be taken off, so it is placed once and checks MN.enabled.
+	if A.isCamelot then
+		if not self.hooked then
+			self.hooked = true
+			for _, name in ipairs(STYLES) do
+				local mixin = _G[name]
+				if type(mixin) == "table" and type(mixin.Generate) == "function" then
+					hooksecurefunc(mixin, "Generate", Generated)
+				end
+			end
+		end
+		return
+	end
 
 	for _, name in ipairs(STYLES) do
 		local mixin = _G[name]

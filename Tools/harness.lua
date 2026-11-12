@@ -2111,11 +2111,16 @@ function hooksecurefunc(a, b, c)
         local obj, name, fn = a, b, c
         local orig = obj[name]
         if type(orig) ~= "function" then return end
-        obj[name] = function(self, ...)
+        local wrap = function(self, ...)
             local r = { orig(self, ...) }
             fn(self, ...)
             return unpack(r)
         end
+        -- Marked, so a check can tell the client's secure wrapper from an
+        -- addon function assigned in its place.
+        _G.__secureWraps = _G.__secureWraps or {}
+        _G.__secureWraps[wrap] = true
+        obj[name] = wrap
         return
     end
     local name, fn = a, b
@@ -7981,6 +7986,11 @@ function MenuVariants.GetDefaultContextMenuMixin()
 	return MenuStyle2Mixin
 end
 
+_G.__menuOriginal = {
+	MenuStyle1Mixin = MenuStyle1Mixin.Generate,
+	MenuStyle2Mixin = MenuStyle2Mixin.Generate,
+}
+
 --- Open a menu the way the client does: acquire a pooled frame, mix the style
 --  in FRESH, generate, then build one line through MenuVariants.
 --
@@ -8027,10 +8037,13 @@ function _G.__OpenMenu(index, style)
 	if not menu then
 		menu = CreateFrame("Frame", nil, UIParent)
 		menu.__isMenuFrame = true
+		-- An attached texture is one of the frame's regions, as in the client.
 		function menu:AttachTexture()
 			self.__attached = self.__attached or {}
+			self.__regions = self.__regions or {}
 			local t = newTexture(self, "ARTWORK")
 			self.__attached[#self.__attached + 1] = t
+			self.__regions[#self.__regions + 1] = t
 			return t
 		end
 		-- Disallowed by the compositor, and it says so rather than obliging.
@@ -18500,6 +18513,28 @@ section("menus: the client's own right-click menus, in our glass", function()
 		.. (M and M.lastError and ("  -- " .. M.lastError) or ""))
 	check(not M.absent, "and it found a menu system it knows how to dress")
 
+	-- WOW FOREVER: A TINT, NEVER OUR GENERATE (2026-11-10). Ours in the mixin
+	-- tainted every menu's layout, and the damage meter's secret values broke
+	-- it: "FrameUtil.lua:223 ... secret number value, while execution tainted
+	-- by 'Lattice'".
+	if A.isCamelot then
+		for _, name in ipairs({ "MenuStyle1Mixin", "MenuStyle2Mixin" }) do
+			local g = _G[name].Generate
+			check(g == _G.__menuOriginal[name] or (_G.__secureWraps or {})[g],
+				name .. "'s Generate is Blizzard's or a secure post-hook, never ours")
+		end
+		local menu = _G.__OpenMenu(1)
+		check(menu.__blizzArt ~= nil and menu._kind == nil,
+			"Blizzard builds the menu, with nothing of ours on it")
+		tick(0.02)
+		local c = A.Palette.c.dialogFill
+		if type(c[1]) == "table" then c = c[1] end
+		local got = menu.__blizzArt.__color
+		check(got and math.abs(got[1] - c[1]) < 0.001 and math.abs(got[3] - c[3]) < 0.001,
+			"and a frame later its background is our dialog fill")
+		return
+	end
+
 	-- BOTH STYLES, and this is the check that was missing.
 	--
 	-- MenuStyle1Mixin is what a dropdown BUTTON opens - a setting in a panel.
@@ -18623,6 +18658,10 @@ section("menus: and gives them back when you switch it off", function()
 	local menu = _G.__OpenMenu(3)
 	check(menu.__blizzArt ~= nil,
 		"the client draws its own panel again")
+	if A.isCamelot then
+		tick(0.02)
+		check(menu.__blizzArt.__tex ~= "SOLID", "and the tint stays off it")
+	end
 	-- The LETTERING stays ours, and should: it belongs to the fonts module, and
 	-- somebody switching the menu glass off has said nothing about type.
 	check(tostring(select(1, menu.__line:GetFont())):find(ADDON, 1, true),
@@ -18632,8 +18671,13 @@ section("menus: and gives them back when you switch it off", function()
 
 	A:SetModuleEnabled("menus", true)
 	local back = _G.__OpenMenu(4)
-	check(back._kind == "panel" and back.__blizzArt == nil,
-		"and ours again on the way back")
+	if A.isCamelot then
+		tick(0.02)
+		check(back.__blizzArt and back.__blizzArt.__tex == "SOLID", "and tinted again on the way back")
+	else
+		check(back._kind == "panel" and back.__blizzArt == nil,
+			"and ours again on the way back")
+	end
 end)
 
 section("menus: a client without them costs a skin, not the interface", function()
