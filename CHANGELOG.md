@@ -1,5 +1,16 @@
 # Lattice
 
+## 2.3.0 - 2026-11-12
+
+- Selling junk at a vendor is now under Settings > Conveniences, and works with Blizzard's bags too.
+- Fixed (WoW Forever): errors when using Blizzard's damage meter. Right-click menus now have a plain background in your theme's colour.
+- Zen and Idle fade have moved to Settings > Conveniences.
+- Fixed: profiles couldn't be deleted, and the profile list didn't always show them all.
+- Fixed (WoW Forever): with Questie or TomTom installed, a character could forget its profile and show the tour again.
+- Fixed: your imp or other demon could show another warlock's name on its nameplate.
+- Fixed: text and sliders were cut off at the left edge of the settings window.
+- Fixed: the page list in the settings window ran off the bottom.
+
 ## 2.2.0 - 2026-11-09
 
 - A loot window of Lattice's own, which opens wherever you put it in unlock mode.
