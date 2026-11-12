@@ -60,20 +60,29 @@ def write_markdown() -> None:
     are written together: a version that has to be typed into three places is a
     version that will be wrong in one of them.
     """
+    out = ["# Lattice", ""]
+    for version, date, lines in read_entries():
+        out += ["## %s - %s" % (version, date), ""]
+        out += ["- " + line for line in lines]
+        out.append("")
+
+    MD.write_text("\n".join(out).rstrip() + "\n", encoding="utf-8", newline="\n")
+
+
+def read_entries() -> list[tuple[str, str, list[str]]]:
+    """Core/Changelog.lua as (version, date, lines), newest first.
+
+    Shared with Tools/announce.py, so the Discord post is the same notes.
+    """
     data = LOG.read_text(encoding="utf-8")
     entries = re.findall(
         r'\{\s*version\s*=\s*"([^"]+)",\s*date\s*=\s*"([^"]+)",'
         r'\s*lines\s*=\s*\{(.*?)\n\t\t\},',
         data, re.S)
-
-    out = ["# Lattice", ""]
-    for version, date, body in entries:
-        out += ["## %s - %s" % (version, date), ""]
-        for line in re.findall(r'"((?:[^"\\]|\\.)*)"', body):
-            out.append("- " + line.replace('\\"', '"').replace("\\\\", "\\"))
-        out.append("")
-
-    MD.write_text("\n".join(out).rstrip() + "\n", encoding="utf-8", newline="\n")
+    return [(version, date,
+             [line.replace('\\"', '"').replace("\\\\", "\\")
+              for line in re.findall(r'"((?:[^"\\]|\\.)*)"', body)])
+            for version, date, body in entries]
 
 
 VERSION_RE = re.compile(rb"^(##\s*Version:\s*)(\S+)\s*$", re.MULTILINE)

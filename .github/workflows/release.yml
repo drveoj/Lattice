@@ -74,3 +74,11 @@ jobs:
           # happens to read that name too.
           WOWI_API_TOKEN: ${{ inputs.publish && secrets.WOWI_API_KEY || '' }}
           WAGO_API_TOKEN: ${{ inputs.publish && secrets.WAGO_API_KEY || '' }}
+
+      # The same notes on Discord, after the uploads have worked. Only with
+      # `publish` ticked: a GitHub-only run is not a release anyone can get.
+      - name: Announce on Discord
+        if: ${{ inputs.publish }}
+        run: python3 Tools/announce.py
+        env:
+          DISCORD_WEBHOOK: ${{ secrets.DISCORD_WEBHOOK }}
