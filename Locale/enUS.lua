@@ -1354,6 +1354,15 @@ L["options.nameplates.hide_blizzard.desc"] =
 	"The one underneath ours. Off is the way back if a plate ever fails "
 		.. "to draw."
 L["options.nameplates.hide_blizzard.name"] = "Hide Blizzard's plate"
+L["options.nameplates.instance_friendly.name"] = "Friendlies in dungeons and raids"
+L["options.nameplates.instance_friendly.desc"] =
+	"Inside a dungeon or raid the game keeps friendly plates to itself, so "
+		.. "ours cannot be drawn there. Names shows friendly players as names "
+		.. "only, in our font. Off hides friendly plates. Blizzard's leaves "
+		.. "them as they are. Shift-V still works inside."
+L["options.nameplates.instance_friendly.names"] = "Names"
+L["options.nameplates.instance_friendly.off"] = "Off"
+L["options.nameplates.instance_friendly.blizzard"] = "Blizzard's"
 L["options.nameplates.max_distance.desc"] =
 	"How far out the client bothers to make a nameplate. Past this "
 		.. "there is no plate at all and the game draws its own floating name "

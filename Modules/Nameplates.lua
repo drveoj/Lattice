@@ -1054,9 +1054,9 @@ end
 -- line - which is a different system entirely and never reaches this module.
 -- The friendly form was complete and invisible for exactly that reason.
 --
--- Only ever turned ON. The off state is the player's own client setting and not
--- ours to clear: switching friendlyNames off makes friendlies wear the capsule,
--- it does not go and edit their console variables.
+-- Turned ON everywhere but dungeons and raids (see INSTANCE_OFF). Switching
+-- friendlyNames off makes friendlies wear the capsule; it does not go and edit
+-- their console variables.
 --
 -- Probed rather than assumed - SetCVar on a name this client does not have
 -- raises, and the set has moved between flavours, which is why the legacy
@@ -1074,16 +1074,126 @@ local FRIENDLY_CVARS = {
 	"nameplateShowEnemyMinus",
 }
 
+-- ---------------------------------------------------------------------------
+-- dungeons and raids
+-- ---------------------------------------------------------------------------
+--
+-- Friendly plates there are forbidden frames: the client hands addons nothing,
+-- so ours cannot be drawn and Blizzard's show instead. Platynator and
+-- EllesmereUI hit the same wall. What still reaches them is console variables
+-- and Blizzard's shared nameplate font, so `instanceFriendly` picks one of:
+--   names    - friendly players as names only, in our font; no NPC/pet plates
+--   off      - no friendly plates
+--   blizzard - leave Blizzard's plates as they are
+-- Set once on the way in, then left to the player (Shift-V) until the way out.
+
+-- What each mode writes on the way in. All of these are hands-off while inside.
+local INSTANCE_SET = {
+	names = {
+		nameplateShowFriendlyPlayers       = "1",
+		nameplateShowFriends               = "1",
+		nameplateShowFriendlyNpcs          = "0",
+		nameplateShowFriendlyPlayerMinions = "0",
+	},
+	off = {
+		nameplateShowFriendlyPlayers       = "0",
+		nameplateShowFriends               = "0",
+		nameplateShowFriendlyNpcs          = "0",
+		nameplateShowFriendlyPlayerMinions = "0",
+	},
+	blizzard = {},
+}
+local HANDS_OFF = INSTANCE_SET.off
+
+-- Blizzard's nameplate font families. The friendly name uses one or the other
+-- depending on the nameplate style CVar.
+local PLATE_FONTS = { "SystemFont_NamePlate", "SystemFont_NamePlate_Outlined" }
+
+local function InstanceMode()
+	if not IsInInstance then return nil end
+	local inside, kind = IsInInstance()
+	if not (inside and (kind == "party" or kind == "raid")) then return nil end
+	local m = cfg().instanceFriendly
+	if m == "off" or m == "blizzard" then return m end
+	return "names"
+end
+
+--- Console variables we changed for the names look, with the value each had.
+--  Kept per character so a logout inside a dungeon still gives them back.
+local function Borrowed()
+	if not (A.db and A.db.char) then return {} end
+	A.db.char.npInstanceBorrowed = A.db.char.npInstanceBorrowed or {}
+	return A.db.char.npInstanceBorrowed
+end
+
+local function Borrow(name, value)
+	local now = GetCVar and GetCVar(name)
+	if now == nil or now == value then return end
+	local store = Borrowed()
+	if store[name] == nil then store[name] = now end
+	pcall(SetCVar, name, value)
+end
+
+--- The roman member only: Outfit has no CJK or Cyrillic glyphs.
+local function RomanMember(family)
+	if family.GetFontObjectForAlphabet then
+		local ok, obj = pcall(family.GetFontObjectForAlphabet, family, "roman")
+		if ok and obj then return obj end
+	end
+	return family
+end
+
+local savedFonts = {}   -- font object -> { file, size, flags } before ours
+
+local function ApplyPlateFont()
+	local file = Media:FontFor("npFriendly")
+	for _, key in ipairs(PLATE_FONTS) do
+		local family = _G[key]
+		local obj = family and RomanMember(family)
+		if obj and obj.GetFont and obj.SetFont then
+			local was = savedFonts[obj]
+			if not was then
+				was = { obj:GetFont() }
+				savedFonts[obj] = was
+			end
+			-- Their size and flags: Blizzard sizes the name per plate.
+			if was[1] then obj:SetFont(file, was[2] or 9, was[3] or "") end
+		end
+	end
+end
+
+local function RestorePlateFont()
+	for obj, was in pairs(savedFonts) do
+		if was[1] then obj:SetFont(was[1], was[2], was[3] or "") end
+		savedFonts[obj] = nil
+	end
+end
+
+--- Undo the names look: the borrowed console variables and the font.
+local function LeaveInstanceLook()
+	local store = Borrowed()
+	for name, was in pairs(store) do
+		if GetCVar and GetCVar(name) ~= nil then pcall(SetCVar, name, was) end
+		store[name] = nil
+	end
+	RestorePlateFont()
+end
+
 --- `initial` means "we are setting up, or the player just changed a setting",
 --  as opposed to "something moved a console variable and we are putting ours
 --  back". The difference matters for exactly one of these - see below.
 local function ApplyCVars(initial)
-	if cfg().friendlyNames == false then return end
-
 	-- Refused in combat. Queued rather than dropped, or a fight starting while
 	-- the UI loads costs you friendly plates until the next reload.
 	if InCombatLockdown and InCombatLockdown() then
 		NP._cvarsPending = true
+		return
+	end
+
+	if cfg().friendlyNames == false then
+		NP._cvarsPending = nil
+		NP._instanced = nil
+		LeaveInstanceLook()
 		return
 	end
 
@@ -1100,13 +1210,38 @@ local function ApplyCVars(initial)
 
 	NP._cvarsPending = nil
 
+	-- Recorded only after the combat and Zen checks, so a deferred zone-in still
+	-- counts as entering when it finally runs. A mode change inside counts too.
+	local mode = InstanceMode()
+	local entering = mode and NP._instanced ~= mode
+	NP._instanced = mode
+
 	-- Written only when it is not already right, which makes this idempotent -
 	-- and that is what lets CVAR_UPDATE re-run it without the two of us setting
 	-- each other off forever.
 	for _, name in ipairs(FRIENDLY_CVARS) do
-		if GetCVar and GetCVar(name) ~= nil and GetCVar(name) ~= "1" then
+		local now = GetCVar and GetCVar(name)
+		if now == nil then
+			-- not on this client
+		elseif mode and HANDS_OFF[name] then
+			local want = entering and INSTANCE_SET[mode][name]
+			if want and now ~= want then pcall(SetCVar, name, want) end
+		elseif now ~= "1" then
 			pcall(SetCVar, name, "1")
 		end
+	end
+
+	-- The look follows settings too (`initial`), so a class-colour change
+	-- inside lands without leaving.
+	if mode == "names" then
+		if entering or initial then
+			Borrow("nameplateShowOnlyNameForFriendlyPlayerUnits", "1")
+			Borrow("nameplateUseClassColorForFriendlyPlayerUnitNames",
+				cfg().partyClassColors and "1" or "0")
+			ApplyPlateFont()
+		end
+	elseif entering or not mode then
+		LeaveInstanceLook()
 	end
 
 	-- How far out the client makes a plate. Past it there is none, and the
@@ -1258,6 +1393,9 @@ function NP:OnEnable()
 	-- ApplyCVars only writes what is actually wrong, and defers to Zen, which
 	-- moves the same ones on purpose.
 	A:RegisterEvent(self, "CVAR_UPDATE", function() ApplyCVars(false) end)
+	-- Into and out of dungeons and raids, where friendly plates are forbidden.
+	A:RegisterEvent(self, "PLAYER_ENTERING_WORLD", function() ApplyCVars(false) end)
+	A:RegisterEvent(self, "ZONE_CHANGED_NEW_AREA", function() ApplyCVars(false) end)
 	A:RegisterEvent(self, "UNIT_AURA", OnAuraChanged)
 
 	-- Casts. THE NATIVE EVENTS DO FIRE FOR A NAMEPLATE UNIT on this build, and
@@ -1352,6 +1490,8 @@ function NP:OnDisable()
 		ShowBlizzard(base)
 	end
 	wipe(byUnit)
+	NP._instanced = nil
+	LeaveInstanceLook()
 end
 
 function NP:OnSkinChanged()

@@ -776,6 +776,9 @@ Config.defaults = {
 				-- UI, and a street of nine class colours says something you did
 				-- not ask. On, it applies to your PARTY only.
 				partyClassColors = false,
+				-- Dungeons and raids, where friendly plates are Blizzard's only:
+				-- "names" (names in our font), "off", or "blizzard".
+				instanceFriendly = "names",
 			},
 
 			-- Tooltips (concept 6a / 6b).

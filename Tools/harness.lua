@@ -2256,6 +2256,8 @@ _G.__cvars = {
 	nameplateShowFriendlyPlayers       = "1",
 	nameplateShowFriendlyPlayerMinions = "1",
 	nameplateShowFriendlyNpcs          = "1",
+	nameplateShowOnlyNameForFriendlyPlayerUnits      = "0",
+	nameplateUseClassColorForFriendlyPlayerUnitNames = "0",
 
 	-- The floating text, which is a SEPARATE system from the bars above and has
 	-- to be modelled separately or the test cannot tell them apart. Note
@@ -2297,6 +2299,13 @@ _G.__cvars = {
 function GetCVar(name)
 	if type(name) ~= "string" then fail("GetCVar got " .. tostring(name)) end
 	return _G.__cvars[name]
+end
+
+-- "none" in the open world, as the client says it; a test sets "party" etc.
+_G.__instanceType = "none"
+function IsInInstance()
+	local kind = _G.__instanceType or "none"
+	return kind ~= "none", kind
 end
 
 -- Counted, not just thrown. An addon that wraps every SetCVar in a pcall looks
@@ -30151,6 +30160,135 @@ do
 	check(_G.__cvarWrites == 0,
 		"and re-running it when nothing is wrong writes nothing at all - which is"
 		.. " what stops us and the next addon setting each other off forever")
+
+	-- Dungeons and raids: friendly plates are forbidden frames there, so ours
+	-- cannot draw on them. A font family like the client's: one object per
+	-- alphabet, and only the roman one is ours to change.
+	local function FontObj(file)
+		local o = { f = { file, 9, "SLUG" } }
+		function o:GetFont() return unpack(self.f) end
+		function o:SetFont(a, b, c) self.f = { a, b, c } end
+		return o
+	end
+	local function Family(roman, korean)
+		local members = { roman = FontObj(roman), korean = FontObj(korean) }
+		return { members = members,
+			GetFontObjectForAlphabet = function(_, a) return members[a] end }
+	end
+	_G.SystemFont_NamePlate = Family([[Fonts\FRIZQT__.TTF]], [[Fonts\2002.TTF]])
+	_G.SystemFont_NamePlate_Outlined = Family([[Fonts\FRIZQT__.TTF]], [[Fonts\2002.TTF]])
+	local roman = _G.SystemFont_NamePlate.members.roman
+	local ours = A.Media:FontFor("npFriendly")
+
+	local npc = A.Config:Module("nameplates")
+	check(npc.instanceFriendly == "names", "(names is the default)")
+	cv.nameplateShowFriendlyPlayers = "1"
+	cv.nameplateShowFriendlyNpcs = "1"
+	cv.nameplateShowFriendlyPlayerMinions = "1"
+	_G.__instanceType = "party"
+	fire("PLAYER_ENTERING_WORLD")
+	check(cv.nameplateShowFriendlyPlayers == "1" and cv.nameplateShowOnlyNameForFriendlyPlayerUnits == "1",
+		"names: a dungeon shows friendly players as names only")
+	check(cv.nameplateShowFriendlyNpcs == "0" and cv.nameplateShowFriendlyPlayerMinions == "0",
+		"names: with no Blizzard bars on friendly NPCs and pets")
+	check(roman.f[1] == ours and roman.f[2] == 9 and roman.f[3] == "SLUG"
+		and _G.SystemFont_NamePlate_Outlined.members.roman.f[1] == ours,
+		"names: Blizzard's plate font is ours, at Blizzard's size and flags")
+	check(_G.SystemFont_NamePlate.members.korean.f[1] == [[Fonts\2002.TTF]],
+		"names: the other alphabets keep the client's font, which has their glyphs")
+	check(cv.nameplateUseClassColorForFriendlyPlayerUnitNames == "0",
+		"names: blue like everywhere else, with party class colours off")
+	npc.partyClassColors = true
+	NPm.applyCVars(true)
+	check(cv.nameplateUseClassColorForFriendlyPlayerUnitNames == "1",
+		"names: class colours follow the party class-colour setting, inside too")
+	npc.partyClassColors = false
+	NPm.applyCVars(true)
+
+	_G.__instanceType = "none"
+	fire("PLAYER_ENTERING_WORLD")
+	check(cv.nameplateShowOnlyNameForFriendlyPlayerUnits == "0"
+		and cv.nameplateShowFriendlyNpcs == "1" and roman.f[1] == [[Fonts\FRIZQT__.TTF]],
+		"names: leaving gives back the console variables and Blizzard's font")
+	check(next(A.db.char.npInstanceBorrowed) == nil, "(nothing left on loan)")
+
+	-- A logout inside: the loan is on the character, so it still comes back.
+	_G.__instanceType = "party"
+	fire("PLAYER_ENTERING_WORLD")
+	NPm._instanced = nil
+	_G.__instanceType = "none"
+	fire("PLAYER_ENTERING_WORLD")
+	check(cv.nameplateShowOnlyNameForFriendlyPlayerUnits == "0",
+		"names: a reload outside still gives back what a dungeon borrowed")
+
+	-- Blizzard's: nothing written at all.
+	npc.instanceFriendly = "blizzard"
+	_G.__instanceType = "raid"
+	fire("PLAYER_ENTERING_WORLD")
+	check(cv.nameplateShowFriendlyNpcs == "1" and cv.nameplateShowOnlyNameForFriendlyPlayerUnits == "0"
+		and roman.f[1] == [[Fonts\FRIZQT__.TTF]],
+		"blizzard: a raid leaves Blizzard's plates exactly as they were")
+	_G.__instanceType = "none"
+	fire("PLAYER_ENTERING_WORLD")
+
+	-- Off: no friendly plates at all.
+	npc.instanceFriendly = "off"
+	_G.__instanceType = "party"
+	fire("PLAYER_ENTERING_WORLD")
+	check(cv.nameplateShowFriendlyPlayers == "0" and cv.nameplateShowFriendlyNpcs == "0"
+		and cv.nameplateShowFriendlyPlayerMinions == "0",
+		"off: entering a dungeon turns friendly plates off")
+	check(cv.nameplateShowEnemyMinions == "1" and cv.nameplateMaxDistance == "41",
+		"and leaves the enemy side alone")
+
+	cv.nameplateShowFriendlyPlayers = "1"
+	fire("CVAR_UPDATE", "nameplateShowFriendlyPlayers", "1")
+	check(cv.nameplateShowFriendlyPlayers == "1",
+		"Shift-V inside turns them back on and it sticks")
+	cv.nameplateShowFriendlyPlayers = "0"
+	fire("CVAR_UPDATE", "nameplateShowFriendlyPlayers", "0")
+	check(cv.nameplateShowFriendlyPlayers == "0", "and off again, and that sticks too")
+
+	cv.nameplateShowFriendlyPlayers = "1"
+	fire("ZONE_CHANGED_NEW_AREA")
+	check(cv.nameplateShowFriendlyPlayers == "1",
+		"moving between areas inside the same dungeon does not switch them off again")
+
+	_G.__instanceType = "none"
+	fire("PLAYER_ENTERING_WORLD")
+	check(cv.nameplateShowFriendlyPlayers == "1" and cv.nameplateShowFriendlyNpcs == "1"
+		and cv.nameplateShowFriendlyPlayerMinions == "1",
+		"leaving puts them all back on")
+
+	-- Zoning in during combat is deferred and still counts as entering.
+	_G.__instanceType = "raid"
+	_G.__inCombat = true
+	fire("PLAYER_ENTERING_WORLD")
+	check(cv.nameplateShowFriendlyPlayers == "1", "(nothing written in combat)")
+	_G.__inCombat = false
+	fire("PLAYER_REGEN_ENABLED")
+	check(cv.nameplateShowFriendlyPlayers == "0",
+		"a raid entered mid-fight turns them off when the fight ends")
+	_G.__instanceType = "none"
+	fire("PLAYER_ENTERING_WORLD")
+	check(cv.nameplateShowFriendlyPlayers == "1", "(and back on outside)")
+
+	-- Changing the setting inside applies it there and then.
+	_G.__instanceType = "party"
+	fire("PLAYER_ENTERING_WORLD")
+	npc.instanceFriendly = "names"
+	NPm.applyCVars(true)
+	check(cv.nameplateShowFriendlyPlayers == "1" and roman.f[1] == ours,
+		"switching to names inside a dungeon takes effect without leaving")
+	npc.instanceFriendly = "off"
+	NPm.applyCVars(true)
+	check(cv.nameplateShowFriendlyPlayers == "0" and roman.f[1] == [[Fonts\FRIZQT__.TTF]]
+		and cv.nameplateShowOnlyNameForFriendlyPlayerUnits == "0",
+		"and switching away gives the font and name-only back")
+	npc.instanceFriendly = "names"
+	_G.__instanceType = "none"
+	fire("PLAYER_ENTERING_WORLD")
+	_G.SystemFont_NamePlate, _G.SystemFont_NamePlate_Outlined = nil, nil
 
 	-- Never turned off: that state is the player's own console setting.
 	A.Config:Module("nameplates").friendlyNames = false

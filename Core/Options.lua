@@ -1186,6 +1186,12 @@ local function NameplatesGroup()
 		partyClassColors = toggle(L.options.nameplates.party_class_colors.name,
 			L.options.nameplates.off_friendly_player_s,
 			at("partyClassColors"), { after = "reconfigure" }),
+		instanceFriendly = choice(L.options.nameplates.instance_friendly.name,
+			L.options.nameplates.instance_friendly.desc, at("instanceFriendly"), {
+				names    = L.options.nameplates.instance_friendly.names,
+				off      = L.options.nameplates.instance_friendly.off,
+				blizzard = L.options.nameplates.instance_friendly.blizzard,
+			}, { after = "reconfigure" }),
 	})
 end
 
