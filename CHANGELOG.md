@@ -1,5 +1,11 @@
 # Lattice
 
+## 2.3.1 - 2026-11-14
+
+- Fixed: in dungeons and raids, friendly nameplates came back in Blizzard's style, and Shift-V couldn't turn them off.
+- New setting under Settings > Nameplates: Friendlies in dungeons and raids. The game doesn't let addons draw friendly plates there, so you can choose names only in Lattice's font (the default), no friendly plates, or Blizzard's.
+- Fixed: the arrow on the flight console pointed the wrong way.
+
 ## 2.3.0 - 2026-11-12
 
 - Selling junk at a vendor is now under Settings > Conveniences, and works with Blizzard's bags too.

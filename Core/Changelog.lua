@@ -38,6 +38,15 @@ local ADDON, A = ...
 --  rather than showing yesterday's news as today's.
 A.CHANGELOG = {
 	{
+		version = "2.3.1",
+		date    = "2026-11-14",
+		lines   = {
+			"Fixed: in dungeons and raids, friendly nameplates came back in Blizzard's style, and Shift-V couldn't turn them off.",
+			"New setting under Settings > Nameplates: Friendlies in dungeons and raids. The game doesn't let addons draw friendly plates there, so you can choose names only in Lattice's font (the default), no friendly plates, or Blizzard's.",
+			"Fixed: the arrow on the flight console pointed the wrong way.",
+		},
+	},
+	{
 		version = "2.3.0",
 		date    = "2026-11-12",
 		lines   = {
