@@ -409,11 +409,12 @@ function IF:Lay()
 	f.capsule:SetShown(not open)
 	f.hairline:SetShown(open)
 
-	-- The control only exists while there is something to fold. Pointing up
-	-- once folded, because that is the way it will move.
+	-- The control only exists while there is something to fold. It points the
+	-- way a click moves things: down to open the region below, up to fold it.
+	-- The texture is drawn pointing down.
 	f.chevron:SetShown(self:HasRegion() and true or false)
 	if f.chevron.glyph.SetRotation then
-		f.chevron.glyph:SetRotation(self.collapsed and math.pi or 0)
+		f.chevron.glyph:SetRotation(self.collapsed and 0 or math.pi)
 	end
 
 	-- SAME RULE, DIFFERENT REASON. There is a region exactly when there is
