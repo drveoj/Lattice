@@ -1,5 +1,9 @@
 # Lattice
 
+## 2.3.2 - 2026-11-18
+
+- Fixed: errors from the chat window during boss fights in dungeons and raids. Chat messages which are protected (e.g. during boss fights in dungeons) are not styled anymore.
+
 ## 2.3.1 - 2026-11-14
 
 - Fixed: in dungeons and raids, friendly nameplates came back in Blizzard's style, and Shift-V couldn't turn them off.

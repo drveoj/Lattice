@@ -38,6 +38,13 @@ local ADDON, A = ...
 --  rather than showing yesterday's news as today's.
 A.CHANGELOG = {
 	{
+		version = "2.3.2",
+		date    = "2026-11-18",
+		lines   = {
+			"Fixed: errors from the chat window during boss fights in dungeons and raids. Chat messages which are protected (e.g. during boss fights in dungeons) are not styled anymore.",
+		},
+	},
+	{
 		version = "2.3.1",
 		date    = "2026-11-14",
 		lines   = {
