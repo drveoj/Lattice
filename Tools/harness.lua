@@ -11463,6 +11463,23 @@ do
 	check(tonumber(chTop) == A.Media.badges.index.GENERAL * A.Media.badges.row,
 		"and General got its own pill rather than the generic one")
 
+	-- A SECRET LINE (Forever, in an instance) goes through untouched: reading
+	-- it threw "attempt to index local 'text'" from RewriteLine (Joe, 2026-11-17).
+	if _G.__flavour == "camelot" then
+		local secretLine = _G.__MakeSecret("|Hchannel:channel:1|h[1. General]|h secret line")
+		C._tag = "x"
+		local ok = pcall(f.AddMessage, f, secretLine, 1, 1, 1, 1)
+		C._tag = nil
+		check(ok and f.__last == secretLine,
+			"a secret chat line is passed on as it came, unread")
+		local secretName = _G.__MakeSecret("Secretname-Realm")
+		local sok, out = pcall(ChatFrameUtil.ProcessSenderNameFilters,
+			"CHAT_MSG_SAY", secretName)
+		check(sok and out == secretName,
+			"and a secret sender name is left for Blizzard to decorate")
+		_G.__secretValues[secretLine], _G.__secretValues[secretName] = nil, nil
+	end
+
 	-- The badge takes its colour from Blizzard's own chat settings rather than
 	-- inventing a second scheme beside them.
 	local ci = ChatTypeInfo.CHANNEL1

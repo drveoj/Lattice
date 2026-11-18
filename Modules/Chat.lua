@@ -1895,6 +1895,8 @@ local function SenderNameFilter(event, name, ...)
 	Chat._tag = nil
 
 	if not Chat.enabled then return nil end
+	-- A secret name or channel is Blizzard's to decorate.
+	if A.IsSecret(event, name, ...) then return nil end
 	if type(name) ~= "string" or name == "" then return nil end
 
 	local cfg = A.Config:Module("chat")
@@ -2104,9 +2106,11 @@ function Chat:WrapAddMessage(f)
 	local orig = f.AddMessage
 	if type(orig) ~= "function" then return end
 
+	-- A secret line (Forever, in instances) passes through untouched: it can
+	-- be handed on but not read.
 	local wrapper
 	wrapper = function(frame, text, r, g, b, id, ...)
-		if Chat.enabled and type(text) == "string" then
+		if Chat.enabled and type(text) == "string" and not A.IsSecret(text, id) then
 			text = Chat:RewriteLine(text, id)
 		end
 		return orig(frame, text, r, g, b, id, ...)
