@@ -1228,6 +1228,10 @@ L["options.i_f_e_c.note"] = "Move it with %s."
 L["options.i_f_e_c.passenger_console_stays"] =
 	"You are a passenger. The console stays."
 L["options.i_f_e_c.play_on.name"] = "Keep playing after landing"
+L["options.i_f_e_c.show_windows.name"] = "Show windows in flight"
+L["options.i_f_e_c.show_windows.desc"] =
+	"Bags, talents and other windows you open in flight show over the hidden "
+		.. "interface."
 L["options.i_f_e_c.player.name"] = "Play a programme in flight"
 L["options.i_f_e_c.programme_carries_into_toolbox"] =
 	"The programme carries on into the Toolbox's N.I.F.E.C. instead of "

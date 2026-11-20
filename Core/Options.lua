@@ -1147,6 +1147,8 @@ local function IFECGroup()
 			{ after = "both" }),
 		hideUI = toggle(L.options.i_f_e_c.hide_u_i.name,
 			L.options.i_f_e_c.passenger_console_stays, at("hideUI")),
+		showWindows = toggle(L.options.i_f_e_c.show_windows.name,
+			L.options.i_f_e_c.show_windows.desc, at("showWindows")),
 		scale = range(L.common.size, L.options.i_f_e_c.scale.desc, at("scale"), 0.5, 1.5, 0.05, { after = "both" }),
 		note = note(A.F(L.options.i_f_e_c.note, A.Hi("/lattice unlock"))),
 	})

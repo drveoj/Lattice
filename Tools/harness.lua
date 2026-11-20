@@ -546,6 +546,9 @@ local function widgetBase(kind)
 
 	function o:SetAlpha(a) self.__alpha = a end
 	function o:GetAlpha() return self.__alpha end
+	-- Both clients (SimpleFrameAPIDocumentation.lua:728, :1187).
+	function o:SetIgnoreParentAlpha(v) self.__ignoreParentAlpha = v and true or false end
+	function o:IsIgnoringParentAlpha() return self.__ignoreParentAlpha == true end
 	--- WoW Forever's way to set alpha from a flag that may be secret: the
 	--  client decides, the addon never tests it (SimpleRegionAPIDocumentation
 	--  .lua:134, AllowedWhenTainted). The flag is kept so a test can ask what
@@ -34348,6 +34351,58 @@ section("ifec: landing, at the scale of everything else, out of the way", functi
 	check(GameTooltip:IsShown(),
 		"while the console's own frames are still read normally")
 	GameTooltip:Hide()
+
+	-- WINDOWS OPENED IN FLIGHT SHOW (issue #2): a panel in Blizzard's slots and
+	-- anything Escape closes ignore the hidden interface's alpha while open.
+	do
+		local slots = {}
+		local realGetUIPanel = _G.GetUIPanel
+		_G.GetUIPanel = function(key) return slots[key] end
+		local talents = CreateFrame("Frame", "HarnessTalentWindow", UIParent)
+		local bagWin = CreateFrame("Frame", "HarnessEscWindow", UIParent)
+		local closed = CreateFrame("Frame", "HarnessClosedWindow", UIParent)
+		local own = CreateFrame("Frame", "HarnessOwnIgnore", UIParent)
+		closed:Hide()
+		own:SetIgnoreParentAlpha(true)
+		slots.left = talents
+		table.insert(UISpecialFrames, "HarnessEscWindow")
+		table.insert(UISpecialFrames, "HarnessClosedWindow")
+		table.insert(UISpecialFrames, "HarnessOwnIgnore")
+		tick(0.4)
+		check(talents:IsIgnoringParentAlpha() and bagWin:IsIgnoringParentAlpha(),
+			"an open panel and an Escape window show over the hidden interface")
+		check(not closed:IsIgnoringParentAlpha(), "a closed one is left alone")
+		check(UIParent:GetAlpha() == 0, "while the rest stays hidden")
+
+		local inside = CreateFrame("Button", nil, bagWin)
+		GameTooltip:Hide()
+		GameTooltip:SetOwner(inside, "ANCHOR_RIGHT")
+		GameTooltip:Show()
+		check(GameTooltip:IsShown(), "and a shown window's own tooltips are read")
+		GameTooltip:Hide()
+
+		bagWin:Hide()
+		tick(0.4)
+		check(not bagWin:IsIgnoringParentAlpha(), "closing a window puts it back")
+
+		cfg.showWindows = false
+		tick(0.4)
+		check(not talents:IsIgnoringParentAlpha(), "the setting off lifts nothing")
+		cfg.showWindows = true
+		tick(0.4)
+		check(talents:IsIgnoringParentAlpha(), "and on again lifts it")
+
+		IF:HideInterface(false)
+		check(not talents:IsIgnoringParentAlpha() and own:IsIgnoringParentAlpha(),
+			"giving the interface back drops ours, and only ours")
+		IF:HideInterface(true)
+
+		for i = #UISpecialFrames, 1, -1 do
+			if UISpecialFrames[i]:find("^Harness") then table.remove(UISpecialFrames, i) end
+		end
+		_G.GetUIPanel = realGetUIPanel
+		talents:Hide() own:Hide()
+	end
 
 	-- LANDING. UnitOnTaxi is still true in the frame control comes back - the
 	-- same lag as on the way out - so requiring it false and giving up left the

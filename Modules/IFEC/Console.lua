@@ -260,7 +260,10 @@ function IF:Refresh()
 	-- RE-ASSERTED, not set once. Zen drives the same UIParent alpha, and a zen
 	-- fade landing mid-flight would put the interface back over the top of us.
 	-- Last writer per frame wins, and while you are a passenger that is this.
-	if self._hidUI then UIParent:SetAlpha(0) end
+	if self._hidUI then
+		UIParent:SetAlpha(0)
+		self:LiftWindows(A.Config:Module("ifec").showWindows ~= false)
+	end
 
 	local elapsed, remaining, fraction = Taxi:Progress()
 
@@ -495,6 +498,7 @@ function IF:HideInterface(hide)
 	else
 		if not self._hidUI then return end
 		self._hidUI = nil
+		self:LiftWindows(false)
 		UIParent:SetAlpha(self._uiAlpha or 1)
 		self._uiAlpha = nil
 	end
@@ -523,15 +527,72 @@ function IF:HideInterface(hide)
 	end
 end
 
+-- ---------------------------------------------------------------------------
+-- windows opened in flight
+--
+-- Opened from their keys while the interface is hidden, a window drew at
+-- UIParent's zero (issue #2). Each open one is told to ignore its parent's
+-- alpha instead, checked every tick and written only on a change. Open means
+-- in one of Blizzard's panel slots (GetUIPanel, UIParentPanelManager.lua:881),
+-- in UISpecialFrames (anything Escape closes, our bags and quest log
+-- included), or one of Blizzard's bag frames, which are in neither.
+-- ---------------------------------------------------------------------------
+
+local PANEL_SLOTS = { "left", "center", "right", "doublewide", "fullscreen" }
+IF.lifted = IF.lifted or {}
+local openNow = {}
+
+local function Open(f)
+	if type(f) ~= "table" or not f.SetIgnoreParentAlpha or not f.IsShown then return false end
+	if f.IsForbidden and f:IsForbidden() then return false end
+	return f:IsShown()
+end
+
+function IF:OpenWindows()
+	wipe(openNow)
+	if GetUIPanel then
+		for _, key in ipairs(PANEL_SLOTS) do
+			local ok, f = pcall(GetUIPanel, key)
+			if ok and Open(f) then openNow[f] = true end
+		end
+	end
+	for _, name in ipairs(_G.UISpecialFrames or {}) do
+		local f = _G[name]
+		if Open(f) then openNow[f] = true end
+	end
+	for i = 1, _G.NUM_CONTAINER_FRAMES or 13 do
+		local f = _G["ContainerFrame" .. i]
+		if Open(f) then openNow[f] = true end
+	end
+	return openNow
+end
+
+--- Lift every open window over the hidden interface, or (`on` false) put them
+--  all back. A frame already ignoring its parent's alpha is not ours to undo.
+function IF:LiftWindows(on)
+	local want = on and self:OpenWindows() or {}
+	for f in pairs(self.lifted) do
+		if not want[f] then
+			pcall(f.SetIgnoreParentAlpha, f, false)
+			self.lifted[f] = nil
+		end
+	end
+	for f in pairs(want) do
+		if not self.lifted[f] and not (f.IsIgnoringParentAlpha and f:IsIgnoringParentAlpha()) then
+			if pcall(f.SetIgnoreParentAlpha, f, true) then self.lifted[f] = true end
+		end
+	end
+end
+
 --- Is this frame one of ours - something that survives the interface being
---  hidden and is therefore allowed to speak?
+--  hidden and is therefore allowed to speak? A lifted window counts.
 local function ours(frame)
 	local top = IF.top
 	if not top or not frame then return false end
 	-- Bounded. A parent chain is a chain and a cycle in one would hang the
 	-- client, which is not a thing to find out about during a flight.
 	for _ = 1, 12 do
-		if frame == top then return true end
+		if frame == top or IF.lifted[frame] then return true end
 		if not frame.GetParent then return false end
 		frame = frame:GetParent()
 		if not frame then return false end

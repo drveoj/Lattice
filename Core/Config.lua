@@ -721,6 +721,8 @@ Config.defaults = {
 				-- the size that suits one is not the size that suits the other.
 				readerScale = 0.7,
 				hideUI  = true,
+				-- Windows opened in flight show over the hidden interface.
+				showWindows = true,
 				-- On top of profile.scale, not instead of it, the way the dock
 				-- and the nameplates have their own. The console is read once a
 				-- minute from across the screen rather than glanced at
