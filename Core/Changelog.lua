@@ -38,6 +38,13 @@ local ADDON, A = ...
 --  rather than showing yesterday's news as today's.
 A.CHANGELOG = {
 	{
+		version = "2.4.0",
+		date    = "2026-11-22",
+		lines   = {
+			"New: bags, talents and other windows you open during a flight now show over the hidden interface. You can turn this off under Settings > In-flight Entertainment Console: Show windows in flight.",
+		},
+	},
+	{
 		version = "2.3.2",
 		date    = "2026-11-18",
 		lines   = {

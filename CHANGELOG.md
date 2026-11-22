@@ -1,5 +1,9 @@
 # Lattice
 
+## 2.4.0 - 2026-11-22
+
+- New: bags, talents and other windows you open during a flight now show over the hidden interface. You can turn this off under Settings > In-flight Entertainment Console: Show windows in flight.
+
 ## 2.3.2 - 2026-11-18
 
 - Fixed: errors from the chat window during boss fights in dungeons and raids. Chat messages which are protected (e.g. during boss fights in dungeons) are not styled anymore.
