@@ -196,6 +196,11 @@ local function NpcTitle(unit)
 	local shift = tonumber(GetCVar and GetCVar("colorblindMode") or 0) or 0
 	local line = _G[(scanner:GetName() or "") .. "TextLeft" .. (2 + shift)]
 	local text = line and line:GetText()
+	-- THE LINE CAN BE SECRET when the name and GUID are not: in a dungeon boss
+	-- fight on Forever. Matched or converted, it threw "string conversion on a
+	-- secret string" from every plate that came up (Joe, 2026-11-22). Not
+	-- cached, so the title is read once it can be.
+	if A.IsSecret(text) then return nil end
 
 	-- Unbracketed, which is how the client writes it - Plater puts its own
 	-- angle brackets on for display and so do we. The first version here only
