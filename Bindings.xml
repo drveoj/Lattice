@@ -28,4 +28,6 @@
 		the Now Playing node with it, so this is the way to pause mid-fight.
 	-->
 	<Binding name="LATTICE_PLAYPAUSE">Lattice_PlayPause()</Binding>
+	<!-- Clear one bag slot: the least valuable item that is safe to remove. -->
+	<Binding name="LATTICE_MAKEROOM">Lattice_MakeRoom()</Binding>
 </Bindings>

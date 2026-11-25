@@ -112,11 +112,120 @@ function CV:Repair()
 end
 
 -- ---------------------------------------------------------------------------
+-- making room (issue #4)
+--
+-- One press clears one slot. The list and the delete are the bags module's
+-- (Bags:RoomCandidates, Bags:ClearSlot), so this works with our bags off.
+-- Deleting needs a click or key press, so nothing here fires by itself: a
+-- full inventory only raises the question.
+-- ---------------------------------------------------------------------------
+
+function CV:Protected()
+	A.db.char.makeRoomProtect = A.db.char.makeRoomProtect or {}
+	return A.db.char.makeRoomProtect
+end
+
+function CV:Rules()
+	A.db.global.makeRoomRules = A.db.global.makeRoomRules or {}
+	return A.db.global.makeRoomRules
+end
+
+function CV:RoomList()
+	local B = A:GetModule("bags")
+	if not (B and B.RoomCandidates) then return {} end
+	local c = cfg()
+	return B:RoomCandidates({
+		maxQuality = c.makeRoomQuality, soulbound = c.makeRoomSoulbound,
+		guessQuest = c.makeRoomGuess, protect = self:Protected(), rules = self:Rules(),
+	})
+end
+
+local function QuestTitle(questID)
+	local fn = _G.C_QuestLog and _G.C_QuestLog.GetTitleForQuestID
+	local ok, t = false, nil
+	if fn then ok, t = pcall(fn, questID) end
+	return (ok and t) or A.F(L.conveniences.make_room.quest_n, questID)
+end
+
+--- Why this one, in a few words.
+function CV:RoomReason(e)
+	if e.tier == 1 then
+		return e.questID and A.F(L.conveniences.make_room.quest_done, QuestTitle(e.questID))
+			or L.conveniences.make_room.not_needed
+	elseif e.tier == 2 then return L.conveniences.make_room.junk
+	elseif e.tier == 3 then return L.conveniences.make_room.no_quest_wants
+	end
+	return L.conveniences.make_room.cheapest
+end
+
+function CV:Clear(e)
+	local B = A:GetModule("bags")
+	local what = B and B:ClearSlot(e)
+	if what == "sold" then
+		A:Print(A.F(L.conveniences.make_room.sold, e.link, A.Val(Coins(e.worth))))
+	elseif what == "deleted" then
+		A:Print(A.F(L.conveniences.make_room.deleted, e.link))
+	else
+		A:Print(A.Bad(L.conveniences.make_room.moved))
+	end
+	return what
+end
+
+--- The press: the key binding or the bag window's bin. `ask` (the full-bags
+--  prompt, which is an event and no press) always goes through the dialog.
+function CV:MakeRoom(ask)
+	if A.Widgets.ConfirmShown() then return end
+	local e = self:RoomList()[1]
+	if not e then
+		if not ask then A:Print(L.conveniences.make_room.nothing) end
+		return
+	end
+
+	local merchant = _G.MerchantFrame and _G.MerchantFrame:IsShown() and e.sellable
+	if not ask and (merchant or (e.tier == 2 and not cfg().makeRoomConfirmGrey)) then
+		return self:Clear(e)
+	end
+
+	A.Widgets.Confirm({
+		text = A.F(L.conveniences.make_room.ask, e.link,
+			e.count > 1 and (" x" .. e.count) or "", Coins(e.worth), self:RoomReason(e)),
+		yes = merchant and L.conveniences.make_room.sell or L.conveniences.make_room.delete,
+		no = _G.CANCEL or "Cancel", mid = L.conveniences.make_room.protect,
+		onYes = function() CV:Clear(e) end,
+		onMid = function()
+			CV:Protected()[e.itemID] = true
+			A:Print(A.F(L.conveniences.make_room.protected, e.link))
+		end,
+	})
+end
+
+--- The game said the bags are full: ask, at most every ten seconds, never
+--  in a fight.
+function CV:OnBagsFull()
+	if not cfg().makeRoomPrompt then return end
+	if InCombatLockdown() then return end
+	local now = GetTime()
+	if self._fullAt and now - self._fullAt < 10 then return end
+	self._fullAt = now
+	self:MakeRoom(true)
+end
+
+_G.BINDING_NAME_LATTICE_MAKEROOM = L.conveniences.make_room.binding
+function _G.Lattice_MakeRoom()
+	if CV.enabled then CV:MakeRoom() end
+end
+
+-- ---------------------------------------------------------------------------
 -- lifecycle
 -- ---------------------------------------------------------------------------
 
 function CV:OnEnable()
 	self:ApplyQuestText()
+
+	-- (owner, event, errorType, message)
+	A:RegisterEvent(self, "UI_ERROR_MESSAGE", function(_, _, _, msg)
+		if msg and (msg == _G.ERR_INV_FULL or msg == _G.ERR_BAG_FULL) then CV:OnBagsFull() end
+	end)
 
 	-- MERCHANT_SHOW rather than the frame's OnShow: the event is the game
 	-- saying a merchant is open, and it arrives whether or not anything has

@@ -657,6 +657,12 @@ Config.defaults = {
 				enabled = true,
 				instantQuestText = false,
 				autoRepair = false,
+				-- Making room (issue #4). Acts only on a press.
+				makeRoomQuality     = 0,     -- 0 greys, 1 whites, 2 greens
+				makeRoomSoulbound   = false,
+				makeRoomConfirmGrey = true,
+				makeRoomPrompt      = true,  -- ask when the bags are full
+				makeRoomGuess       = false, -- quest items no quest mentions
 			},
 
 			-- The game's own lettering, by remapping its font objects. The one

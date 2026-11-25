@@ -75,6 +75,10 @@ L["bags.sort.name"] = "Combine"
 L["bags.sort.desc"] =
 	"Stack what can be stacked and move everything up, so the empty slots "
 		.. "end up together at the bottom."
+L["bags.make_room.name"] = "Make room"
+L["bags.make_room.desc"] =
+	"Deletes your cheapest item that's safe to get rid of, or sells it if a "
+		.. "merchant is open."
 L["bags.search.items"] = "Search items\226\128\166"
 L["bags.search.bank"] = "Search bank\226\128\166"
 
@@ -167,6 +171,15 @@ L["cmd.bags.junk_auto_sell_s"] =
 		.. "merchant."
 L["cmd.bags.junk_auto_sell_s2"] = "junk auto-sell %s."
 L["cmd.bags.junk_sell"] = "no junk to sell."
+
+L["cmd.room.off"] = "conveniences is turned off."
+L["cmd.room.give_item"] = "shift-click an item or type its ID."
+L["cmd.room.protected"] = "%s is protected."
+L["cmd.room.unprotected"] = "%s isn't protected any more."
+L["cmd.room.rule_removed"] = "removed the rule for %s."
+L["cmd.room.rule_quest"] = "%s can go once quest %d is done."
+L["cmd.room.rule_always"] = "%s can always go."
+L["cmd.room.next_up"] = "next up:"
 
 L["cmd.bar.bar_s"] = "no bar %s."
 L["cmd.bar.extra_no_shape"] =
@@ -405,6 +418,23 @@ L["common.zen_s_s_s"] = "zen %s -> %s  ·  %s"
 L["conveniences.repair.enough_repairs"] = "not enough for repairs:"
 L["conveniences.repair.repaired_s"] = "repaired for %s"
 L["conveniences.repair.needed_on_you"] = "%s needed, %s on you"
+
+L["conveniences.make_room.binding"] = "Make room in bags"
+L["conveniences.make_room.quest_n"] = "quest %d"
+L["conveniences.make_room.quest_done"] = "quest done: %s"
+L["conveniences.make_room.not_needed"] = "marked as not needed"
+L["conveniences.make_room.junk"] = "junk"
+L["conveniences.make_room.no_quest_wants"] = "no quest needs it"
+L["conveniences.make_room.cheapest"] = "cheapest item"
+L["conveniences.make_room.sold"] = "sold %s for %s"
+L["conveniences.make_room.deleted"] = "deleted %s"
+L["conveniences.make_room.moved"] = "that item moved, nothing deleted."
+L["conveniences.make_room.nothing"] = "nothing safe to delete."
+L["conveniences.make_room.ask"] = "Get rid of %s%s?\n\nWorth %s (%s)"
+L["conveniences.make_room.delete"] = "Delete"
+L["conveniences.make_room.sell"] = "Sell"
+L["conveniences.make_room.protect"] = "Keep"
+L["conveniences.make_room.protected"] = "%s won't be offered again."
 
 -- core --------------------------------------------------------------------
 
@@ -940,6 +970,29 @@ L["options.conveniences.quest_text_appears_once"] =
 		.. "Text - set for you. Off puts it back the way you had it, which is "
 		.. "why it is off here to begin with: you may have chosen the typing "
 		.. "on purpose."
+L["options.conveniences.make_room_prompt.name"] = "Ask to make room when bags are full"
+L["options.conveniences.make_room_prompt.desc"] =
+	"When your bags are full, offers to get rid of your cheapest safe item. "
+		.. "Nothing gets deleted unless you click."
+L["options.conveniences.make_room_quality.name"] = "Highest rarity to delete"
+L["options.conveniences.make_room_quality.desc"] =
+	"Won't delete anything above this. Epics and up are never deleted."
+L["options.conveniences.make_room_quality.grey"] = "Grey"
+L["options.conveniences.make_room_quality.white"] = "White"
+L["options.conveniences.make_room_quality.green"] = "Green"
+L["options.conveniences.make_room_confirm_grey.name"] = "Ask before deleting greys"
+L["options.conveniences.make_room_confirm_grey.desc"] =
+	"Turn off to delete greys straight away. Anything else always asks."
+L["options.conveniences.make_room_soulbound.name"] = "Include soulbound items"
+L["options.conveniences.make_room_soulbound.desc"] =
+	"Soulbound items are skipped unless this is on."
+L["options.conveniences.make_room_guess.name"] = "Include unused quest items"
+L["options.conveniences.make_room_guess.desc"] =
+	"Quest items none of your current quests need. They might be for a quest "
+		.. "you haven't picked up yet, so careful."
+L["options.conveniences.make_room_note"] =
+	"Set a key in Key Bindings > Lattice. Use %s to protect items or add your "
+		.. "own rules."
 L["options.conveniences.repairs_everything_moment_open"] =
 	"Repairs everything the moment you open a merchant who "
 		.. "can.\n\nOFF by default, because it SPENDS YOUR MONEY. It will "

@@ -3661,6 +3661,119 @@ function W.AuraTime(expiration, duration)
 	return string.format("%.1fs", remain)
 end
 
+-- ---------------------------------------------------------------------------
+-- the shared confirm dialog
+--
+-- One modal for any question with a yes and a no, plus an optional middle
+-- button. Same make as the bags' and quest log's: dialogFill over a scrim,
+-- at the profile scale, Escape and a click outside both cancel. `onYes` runs
+-- from the click, so it is a hardware event where the API needs one.
+-- ---------------------------------------------------------------------------
+
+local CONFIRM_W, CONFIRM_MIN_H, CONFIRM_PAD = 360, 150, 26
+local confirm
+
+local function BuildConfirm()
+	local dim = CreateFrame("Frame", nil, UIParent)
+	dim:SetAllPoints(UIParent)
+	dim:SetFrameStrata("FULLSCREEN_DIALOG")
+	dim:EnableMouse(true)
+	dim.scrim = dim:CreateTexture(nil, "BACKGROUND")
+	dim.scrim:SetTexture(Media.texture.flat)
+	dim.scrim:SetAllPoints(dim)
+	dim:SetScript("OnMouseDown", function(_, button)
+		if button == nil or button == "LeftButton" then W.CloseConfirm() end
+	end)
+	dim:Hide()
+
+	local box = A.Glass.CreatePanel(dim, {
+		corner = 16, shadow = 1, fill = "dialogFill", edge = "glassEdgeHi",
+	})
+	box:SetSize(CONFIRM_W, CONFIRM_MIN_H)
+	box:EnableMouse(true)
+	box:SetFrameStrata("FULLSCREEN_DIALOG")
+	box:SetFrameLevel(dim:GetFrameLevel() + 10)
+	dim.box = box
+
+	box.text = W.Text(box, "qlObjName", "CENTER")
+	box.text:SetPoint("TOPLEFT", box, "TOPLEFT", CONFIRM_PAD, -26)
+	box.text:SetWidth(CONFIRM_W - CONFIRM_PAD * 2)
+	box.text:SetJustifyV("TOP")
+	if box.text.SetWordWrap then box.text:SetWordWrap(true) end
+	if box.text.SetSpacing then box.text:SetSpacing(4) end
+
+	box.yes = W.Command(box, { variant = "primary", label = "", enter = true })
+	box.yes:SetPoint("BOTTOMRIGHT", box, "BOTTOMRIGHT", -CONFIRM_PAD, 22)
+	box.no = W.Command(box, { label = "" })
+	box.no:SetPoint("BOTTOMLEFT", box, "BOTTOMLEFT", CONFIRM_PAD, 22)
+	box.mid = W.Command(box, { label = "" })
+	box.mid:SetPoint("BOTTOM", box, "BOTTOM", 0, 22)
+
+	box.no:SetAction(function() W.CloseConfirm() end)
+	box.yes:SetAction(function()
+		local fn = dim.onYes
+		W.CloseConfirm()
+		if fn then fn() end
+	end)
+	box.mid:SetAction(function()
+		local fn = dim.onMid
+		W.CloseConfirm()
+		if fn then fn() end
+	end)
+
+	-- Only Escape is swallowed; anything else passes through.
+	dim:EnableKeyboard(true)
+	if dim.SetPropagateKeyboardInput then dim:SetPropagateKeyboardInput(true) end
+	dim:SetScript("OnKeyDown", function(self, key)
+		if key ~= "ESCAPE" then
+			if self.SetPropagateKeyboardInput then self:SetPropagateKeyboardInput(true) end
+			return
+		end
+		if self.SetPropagateKeyboardInput then self:SetPropagateKeyboardInput(false) end
+		W.CloseConfirm()
+	end)
+	return dim
+end
+
+function W.CloseConfirm()
+	if not confirm then return end
+	confirm.onYes, confirm.onMid = nil, nil
+	confirm:Hide()
+end
+
+function W.ConfirmShown()
+	return confirm ~= nil and confirm:IsShown()
+end
+
+--- opts: text, yes, no, onYes, and optionally mid + onMid.
+function W.Confirm(opts)
+	confirm = confirm or BuildConfirm()
+	local c, box = A.Palette.c, confirm.box
+	box.text:SetText(opts.text or "")
+	W.Color(box.text, c.text)
+	box.yes:SetLabel(opts.yes or _G.YES or "Yes")
+	box.no:SetLabel(opts.no or _G.NO or "No")
+	box.mid:SetShown(opts.mid ~= nil)
+	if opts.mid then box.mid:SetLabel(opts.mid) end
+	confirm.onYes, confirm.onMid = opts.onYes, opts.onMid
+
+	local textH = math.ceil(box.text:GetStringHeight() or 0)
+	box:SetSize(CONFIRM_W, math.max(CONFIRM_MIN_H, 26 + textH + 24 + W.COMMAND_H + 22))
+	local sc = A.db.profile.scale
+	box:SetScale(sc)
+	box:ClearAllPoints()
+	box:SetPoint("CENTER", UIParent, "CENTER", 0, 60 / ((sc and sc > 0) and sc or 1))
+	box:SetShadow(1)
+	box:ApplySkin("dialogFill", "glassEdgeHi")
+	local s = c.scrim
+	confirm.scrim:SetVertexColor(s[1], s[2], s[3], s[4] or 0.45)
+	box.yes:Repaint()
+	box.no:Repaint()
+	box.mid:Repaint()
+	confirm:Show()
+	return box
+end
+
 function W.Duration(sec)
 	if not sec or sec <= 0 then return "" end
 	if sec >= 3600 then return string.format("%dh", math.floor(sec / 3600 + 0.5)) end

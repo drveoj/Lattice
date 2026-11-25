@@ -1089,6 +1089,26 @@ local function ConveniencesGroup()
 		-- switch is here, where people look for it.
 		junkAutoSell = toggle(L.options.bags.junk_auto_sell.name,
 			L.options.bags.sells_every_poor_quality, { "modules", "bags", "junkAutoSell" }),
+
+		makeRoomPrompt = toggle(L.options.conveniences.make_room_prompt.name,
+			L.options.conveniences.make_room_prompt.desc, at("makeRoomPrompt")),
+		makeRoomQuality = (function()
+			local q = choice(L.options.conveniences.make_room_quality.name,
+				L.options.conveniences.make_room_quality.desc, at("makeRoomQuality"), {
+					[0] = L.options.conveniences.make_room_quality.grey,
+					[1] = L.options.conveniences.make_room_quality.white,
+					[2] = L.options.conveniences.make_room_quality.green,
+				})
+			q.sorting = { 0, 1, 2 } -- by rarity, not by label
+			return q
+		end)(),
+		makeRoomConfirmGrey = toggle(L.options.conveniences.make_room_confirm_grey.name,
+			L.options.conveniences.make_room_confirm_grey.desc, at("makeRoomConfirmGrey")),
+		makeRoomSoulbound = toggle(L.options.conveniences.make_room_soulbound.name,
+			L.options.conveniences.make_room_soulbound.desc, at("makeRoomSoulbound")),
+		makeRoomGuess = toggle(L.options.conveniences.make_room_guess.name,
+			L.options.conveniences.make_room_guess.desc, at("makeRoomGuess")),
+		makeRoomNote = note(A.F(L.options.conveniences.make_room_note, A.Hi("/lattice room"))),
 	})
 end
 

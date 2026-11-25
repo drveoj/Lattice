@@ -5058,7 +5058,33 @@ function C_Container.GetContainerItemQuestInfo(bag, slot)
 	local info = C_Container.GetContainerItemInfo(bag, slot)
 	local it = info and _G.__items[info.itemID]
 	local isQuest = it and it[2] == 12 or false
-	return { isQuestItem = isQuest, questID = nil, isActive = false }
+	-- it[8]: the quest this item starts, if any.
+	return { isQuestItem = isQuest, questID = it and it[8], isActive = false }
+end
+
+ERR_INV_FULL = "Inventory is full."
+ERR_BAG_FULL = "That bag is full."
+
+-- Quests this character has finished.
+_G.__questsDone = {}
+function IsQuestFlaggedCompleted(id) return _G.__questsDone[id] == true end
+
+function GetCursorInfo()
+	local cur = _G.__cursor
+	if cur then return "item", cur.id end
+end
+
+--- Restricted on Forever (GameCursorDocumentation.lua:54): only from a click
+--  or key press. Tests set __hardware around a press; anything else fails.
+_G.__hardware = false
+_G.__deleted = {}
+function DeleteCursorItem()
+	if not _G.__hardware then fail("DeleteCursorItem outside a click or key press") return end
+	local cur = _G.__cursor
+	if cur then
+		_G.__deleted[#_G.__deleted + 1] = { id = cur.id, count = cur.count }
+		_G.__cursor = nil
+	end
 end
 
 function C_Container.GetContainerItemCooldown() return 0, 0, 0 end
@@ -29240,6 +29266,116 @@ do
 	A:SetModuleEnabled("bags", true)
 	Bg.selling = nil
 	cfg.junkAutoSell = false
+end
+
+print("== conveniences: making room (issue #4) ==")
+do
+	local CV = A:GetModule("conveniences")
+	local cc = A.Config:Module("conveniences")
+	local saved = {}
+	for b = 0, 4 do saved[b] = _G.__bags[b] end
+	-- A sealed letter that starts quest 500, and a stranger's quest item.
+	_G.__items[90001] = { "Sealed Letter", 12, 0, 1, 1, 0, "letter.tga", 500 }
+	_G.__bags[0] = { size = 8, slots = {
+		[1] = { 6948, 1 }, [2] = { 2589, 12 }, [3] = { 1266, 1 }, [4] = { 3300, 1 },
+		[5] = { 1183, 1 }, [6] = { 10250, 1 }, [7] = { 90001, 1 },
+	} }
+	_G.__bags[1] = { size = 4, slots = { [1] = { 2381, 1 }, [2] = { 159, 20 },
+		[3] = { 5758, 1 } } }
+	for b = 2, 4 do _G.__bags[b] = { size = 0, slots = {} } end
+	_G.__deleted, _G.__used = {}, {}
+	local function ids(list)
+		local t = {}
+		for i, e in ipairs(list) do t[i] = e.itemID end
+		return table.concat(t, ",")
+	end
+
+	check(cc.makeRoomPrompt == true and cc.makeRoomQuality == 0
+		and cc.makeRoomConfirmGrey == true and cc.makeRoomGuess == false,
+		"ships with the prompt on, greys only, greys asked about, no guessing")
+
+	local list = CV:RoomList()
+	check(ids(list) == "1183,3300",
+		"greys only, cheapest first; the letter's quest is not done, and the "
+		.. "rock cannot be sold (" .. ids(list) .. ")")
+
+	_G.__questsDone[500] = true
+	list = CV:RoomList()
+	check(list[1] and list[1].itemID == 90001,
+		"a quest starter for a finished quest goes first, unsellable or not")
+	_G.__questsDone[500] = nil
+
+	cc.makeRoomQuality = 2
+	list = CV:RoomList()
+	check(ids(list) == "1183,3300,159,2589,2381",
+		"up to greens adds whites and greens, cheapest stack first, never the "
+		.. "hearthstone, the rare robe or the quest item (" .. ids(list) .. ")")
+
+	-- A quest that wants linen keeps it.
+	local log = _G.__questLog
+	table.insert(log, { title = "Cloth for Bandages", level = 5, id = 501,
+		objectives = { { "Linen Cloth: 12/20", "item", false } } })
+	list = CV:RoomList()
+	check(not ids(list):find("2589"), "an item a quest in the log names is kept ("
+		.. ids(list) .. ")")
+	table.remove(log)
+
+	cc.makeRoomGuess = true
+	list = CV:RoomList()
+	check(ids(list):find("1266") ~= nil,
+		"the opt-in guess offers a quest item no quest mentions")
+	cc.makeRoomGuess, cc.makeRoomQuality = false, 0
+
+	CV:Protected()[1183] = true
+	check(CV:RoomList()[1].itemID == 3300, "a protected item is never offered")
+	CV:Protected()[1183] = nil
+
+	-- The press asks first by default; the delete runs from the dialog's click.
+	_G.__hardware = true
+	CV:MakeRoom()
+	check(A.Widgets.ConfirmShown() and #_G.__deleted == 0,
+		"a press on a grey asks first, by default")
+	CV:MakeRoom()
+	check(#_G.__deleted == 0, "a second press while it asks does nothing")
+	_G.__confirmYes = nil
+	A.Widgets.Confirm({ text = "", onYes = function() _G.__confirmYes = true end })
+	A.Widgets.CloseConfirm()
+	check(not A.Widgets.ConfirmShown(), "the dialog closes")
+
+	cc.makeRoomConfirmGrey = false
+	CV:MakeRoom()
+	check(#_G.__deleted == 1 and _G.__deleted[1].id == 1183
+		and not _G.__bags[0].slots[5],
+		"with the question off, a press deletes the cheapest grey")
+	_G.__hardware = false
+
+	-- The full-bags prompt is an event, not a press: it must only ask.
+	CV._fullAt = nil
+	fire("UI_ERROR_MESSAGE", 0, _G.ERR_INV_FULL or "Inventory is full.")
+	check(A.Widgets.ConfirmShown() and #_G.__deleted == 1,
+		"bags full raises the question and deletes nothing by itself")
+	A.Widgets.CloseConfirm()
+
+	-- A slot that changed since it was listed is left alone.
+	local e = CV:RoomList()[1]
+	_G.__bags[e.bag].slots[e.slot] = { 1183, 1 }
+	_G.__hardware = true
+	check(CV:Clear(e) == nil and #_G.__deleted == 1,
+		"an item that moved or changed is not removed")
+	_G.__hardware = false
+
+	-- With a merchant open it sells instead.
+	_G.MerchantFrame:Show()
+	_G.__hardware = true
+	CV:MakeRoom()
+	_G.__hardware = false
+	check(#_G.__used == 1 and #_G.__deleted == 1, "with a merchant open it sells")
+	_G.MerchantFrame:Hide()
+
+	cc.makeRoomConfirmGrey = true
+	_G.__items[90001] = nil
+	for b = 0, 4 do _G.__bags[b] = saved[b] end
+	_G.__deleted, _G.__used = {}, {}
 end
 
 print("== bags: turning it off gives Blizzard's back ==")

@@ -819,20 +819,35 @@ end
 --  drawing in the WoW UI, so the glyph is three descending rules -- which is
 --  what the lucide icon is, minus the arrow. It was a 22 px button of its own
 --  with no hover at all, beside a close button that had one (2026-10-12).
-local function BuildSortButton(parent, onClick, tip)
+local function BuildSortButton(parent, onClick, tip, glyph)
 	local b = CreateFrame("Button", nil, parent)
 	b:SetSize(W.CHROME_HIT, W.CHROME_HIT)
 	b.wash = W.ChromeWash(b)
 	b.bars = {}
 
 	local left = (W.CHROME_HIT - ICON_SIZE) / 2
-	for i = 1, 3 do
+	local function rule(w, h, x, y)
 		local t = b:CreateTexture(nil, "ARTWORK")
 		t:SetTexture(Media.texture.flat)
-		t:SetHeight(A:Px(2))
-		t:SetWidth(ICON_SIZE - (i - 1) * 4)
-		t:SetPoint("LEFT", b, "LEFT", left, 5 - (i - 1) * 5)
-		b.bars[i] = t
+		t:SetSize(w, h)
+		t:SetPoint("CENTER", b, "CENTER", x, y)
+		b.bars[#b.bars + 1] = t
+	end
+	if glyph == "bin" then
+		-- A bin, for making room: lid, handle, and three staves.
+		local px = A:Px(2)
+		rule(ICON_SIZE, px, 0, 5)
+		rule(4, px, 0, 7)
+		for i = -1, 1 do rule(px, ICON_SIZE - 6, i * 4, -2) end
+	else
+		for i = 1, 3 do
+			local t = b:CreateTexture(nil, "ARTWORK")
+			t:SetTexture(Media.texture.flat)
+			t:SetHeight(A:Px(2))
+			t:SetWidth(ICON_SIZE - (i - 1) * 4)
+			t:SetPoint("LEFT", b, "LEFT", left, 5 - (i - 1) * 5)
+			b.bars[i] = t
+		end
 	end
 
 	function b:Restyle(over)
@@ -892,6 +907,15 @@ local function BuildHeader(frame)
 		function() Bags:StartSort(frame) end,
 		{ L.bags.sort.name, L.bags.sort.desc })
 	head.sort:SetPoint("RIGHT", head.close, "LEFT", -6, 0)
+
+	-- Make room (issue #4), on the bags only; the bank has nothing to clear.
+	if frame.kind ~= "bank" then
+		head.room = BuildSortButton(head, function()
+			local CV = A:GetModule("conveniences")
+			if CV and CV.MakeRoom then CV:MakeRoom() end
+		end, { L.bags.make_room.name, L.bags.make_room.desc }, "bin")
+		head.room:SetPoint("RIGHT", head.sort, "LEFT", -2, 0)
+	end
 
 	-- THE HAIRLINE ALONG ITS FOOT, which is what makes this a header band
 	-- rather than a row of controls floating over the grid. Every panel in the
@@ -2922,6 +2946,152 @@ function Bags:FinishSelling()
 		A.Val((_G.GetCoinTextureString and _G.GetCoinTextureString(s.earned))
 			or (s.earned .. "c"))))
 	self:Invalidate()
+end
+
+-- ---------------------------------------------------------------------------
+-- making room (issue #4)
+--
+-- What can go when the bags are full, best first. Three tiers: items no longer
+-- needed (a quest starter for a finished quest, or a rule of yours), greys,
+-- then whites and greens up to `maxQuality`. Inside a tier, cheapest first.
+--
+-- NEVER: a locked slot, the hearthstone, a protected item, anything a quest in
+-- the log names in an objective, a quest item for an unfinished quest, epic or
+-- better. Soulbound and unsellable only when the item is no longer needed or
+-- `soulbound` is allowed. A quest-type item no quest in the log mentions is a
+-- guess (it may belong to a quest not yet picked up), so it is opt-in.
+-- ---------------------------------------------------------------------------
+
+Bags.HEARTHSTONE = 6948
+
+function Bags.QuestDone(questID)
+	local fn = (_G.C_QuestLog and _G.C_QuestLog.IsQuestFlaggedCompleted)
+		or _G.IsQuestFlaggedCompleted
+	if not (fn and questID) then return false end
+	local ok, done = pcall(fn, questID)
+	return ok and done and true or false
+end
+
+--- Every objective line of every quest in the log, lowercased, for asking
+--  "does a quest want this item?" by name.
+function Bags.WantedText()
+	local lines = {}
+	local entries = A.Quest.NumEntries()
+	for i = 1, entries do
+		local _, _, _, isHeader = A.Quest.Title(i)
+		if not isHeader then
+			for _, o in ipairs(A.Quest.Objectives(i)) do
+				lines[#lines + 1] = o.text:lower()
+			end
+		end
+	end
+	return lines
+end
+
+local function Wanted(name, lines)
+	if not name or name == "" then return true end -- unknown: assume wanted
+	name = name:lower()
+	for _, l in ipairs(lines) do
+		if l:find(name, 1, true) then return true end
+	end
+	return false
+end
+
+function Bags:RoomCandidates(opts)
+	opts = opts or {}
+	local maxQ = math.min(tonumber(opts.maxQuality) or 0, 2)
+	local protect, rules = opts.protect or {}, opts.rules or {}
+	local lines = Bags.WantedText()
+	local out = {}
+
+	for _, bag in ipairs(InventoryBags()) do
+		for slot = 1, SlotsIn(bag) do
+			local info = SlotInfo(bag, slot)
+			local id = info and info.itemID
+			if id and not info.isLocked and id ~= Bags.HEARTHSTONE and not protect[id]
+				and info.quality and info.quality <= 2 then
+				local q
+				if GetQuestInfoAt then
+					local ok, r = pcall(GetQuestInfoAt, bag, slot)
+					if ok then q = r end
+				end
+				local name = info.itemName
+					or (info.hyperlink and info.hyperlink:match("|h%[(.-)%]|h"))
+				local tier, why
+
+				local rule = rules[id]
+				if q and q.questID then
+					if Bags.QuestDone(q.questID) then tier, why = 1, q.questID end
+				elseif rule and (rule == true or Bags.QuestDone(rule)) then
+					tier, why = 1, rule ~= true and rule or nil
+				elseif q and q.isQuestItem then
+					if opts.guessQuest and not Wanted(name, lines) then tier = 3 end
+				elseif not Wanted(name, lines) then
+					local sellable = not info.hasNoValue
+					local bound = info.isBound
+					if sellable and (opts.soulbound or not bound) then
+						if info.quality == 0 then tier = 2
+						elseif info.quality <= maxQ then tier = 4 end
+					end
+				end
+
+				if tier then
+					local price = 0
+					if ItemInfo then
+						local ok, _, _, _, _, _, _, _, _, _, _, p = pcall(ItemInfo, id)
+						if ok then price = tonumber(p) or 0 end
+					end
+					out[#out + 1] = { bag = bag, slot = slot, itemID = id,
+						link = info.hyperlink, count = info.stackCount or 1,
+						quality = info.quality, tier = tier, questID = why,
+						sellable = not info.hasNoValue,
+						worth = price * (info.stackCount or 1) }
+				end
+			end
+		end
+	end
+
+	table.sort(out, function(a, b)
+		if a.tier ~= b.tier then return a.tier < b.tier end
+		if a.worth ~= b.worth then return a.worth < b.worth end
+		if a.quality ~= b.quality then return a.quality < b.quality end
+		if a.bag ~= b.bag then return a.bag < b.bag end
+		return a.slot < b.slot
+	end)
+	return out
+end
+
+--- Sell (merchant open) or delete one listed item, re-checked by identity at
+--  the moment of acting. Delete must run from a click or key press: the
+--  client restricts DeleteCursorItem. Returns "sold", "deleted" or nil.
+function Bags:ClearSlot(e)
+	local info = SlotInfo(e.bag, e.slot)
+	if not info or info.itemID ~= e.itemID or info.isLocked
+		or info.hyperlink ~= e.link or (info.stackCount or 1) ~= e.count then
+		return nil
+	end
+
+	if _G.MerchantFrame and _G.MerchantFrame:IsShown() and UseItemAt
+		and not info.hasNoValue then
+		pcall(UseItemAt, e.bag, e.slot)
+		return "sold"
+	end
+
+	if not (PickupItemAt and _G.DeleteCursorItem and _G.GetCursorInfo) then return nil end
+	if _G.GetCursorInfo() ~= nil then return nil end
+	pcall(PickupItemAt, e.bag, e.slot)
+	local kind, id = _G.GetCursorInfo()
+	if kind ~= "item" or id ~= e.itemID then
+		if _G.ClearCursor then _G.ClearCursor() end
+		return nil
+	end
+	_G.DeleteCursorItem()
+	if _G.GetCursorInfo() ~= nil then
+		if _G.ClearCursor then _G.ClearCursor() end
+		return nil
+	end
+	self:Invalidate()
+	return "deleted"
 end
 
 -- ---------------------------------------------------------------------------

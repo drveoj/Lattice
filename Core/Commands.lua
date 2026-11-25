@@ -37,6 +37,7 @@ local function usage()
 		A.Hi("/lattice auras") .. " <refresh>  ·  what the aura API is actually saying",
 		A.Hi("/lattice chat") .. " <reskin · where · lines/badges on|off · whispers on|off>",
 		A.Hi("/lattice bags") .. " <open · sort · sell · junk on|off>  ·  what the container API is saying",
+		A.Hi("/lattice room") .. " <protect|unprotect ITEM · rule ITEM [questID] · unrule ITEM>  ·  what making room would remove",
 		A.Hi("/lattice tooltips") .. " <cursor|anchor|badge|sweep>  ·  which tooltips got skinned",
 		A.Hi("/lattice toolbox") .. " <dock left/right · open [menu/widgets/addons/settings/news] · close · pin NAME>",
 		A.Hi("/lattice world") .. " retract  ·  the World trunk up into the pill, or back down",
@@ -942,6 +943,43 @@ handlers.auras = function(arg)
 		return
 	end
 	Au:Diagnose()
+end
+
+--- Make room (issue #4): what would go, and the protect list and rules.
+handlers.room = function(arg, rest)
+	local CV = A:GetModule("conveniences")
+	if not (CV and CV.enabled) then A:Print(L.cmd.room.off) return end
+	local id = rest and tonumber(rest:match("item:(%d+)") or rest:match("^(%d+)"))
+
+	if arg == "protect" or arg == "unprotect" then
+		if not id then A:Print(L.cmd.room.give_item) return end
+		CV:Protected()[id] = (arg == "protect") or nil
+		A:Print(A.F(arg == "protect" and L.cmd.room.protected or L.cmd.room.unprotected, rest))
+		return
+	elseif arg == "rule" or arg == "unrule" then
+		if not id then A:Print(L.cmd.room.give_item) return end
+		if arg == "unrule" then
+			CV:Rules()[id] = nil
+			A:Print(A.F(L.cmd.room.rule_removed, rest))
+			return
+		end
+		-- The quest ID after the link; none means "always safe".
+		local tail = rest:gsub("|c.-|r", ""):gsub("|H.-|h.-|h", "")
+		local quest = tonumber(tail:match("(%d+)%s*$"))
+		if quest == id then quest = nil end
+		CV:Rules()[id] = quest or true
+		A:Print(quest and A.F(L.cmd.room.rule_quest, rest, quest)
+			or A.F(L.cmd.room.rule_always, rest))
+		return
+	end
+
+	local list = CV:RoomList()
+	if #list == 0 then A:Print(L.conveniences.make_room.nothing) return end
+	A:Print(L.cmd.room.next_up)
+	for i = 1, math.min(#list, 5) do
+		local e = list[i]
+		say("   %d. %s  %s", i, e.link or "?", A.Dim(CV:RoomReason(e)))
+	end
 end
 
 handlers.bags = function(arg, rest)
