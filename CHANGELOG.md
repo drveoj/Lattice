@@ -1,5 +1,12 @@
 # Lattice
 
+## 2.4.1 - 2026-11-25
+
+- New: Make room. When your bags are full, one press (bin button on the bags, or a key binding) deletes your cheapest safe item, or sells it at a merchant. Settings are under Conveniences.
+- New: shift-click a quest in the quest log or tracker to link it in chat.
+- Fixed: errors in chat from nameplates during dungeon boss fights.
+- Errors Lattice catches are now kept between sessions in /lattice errors, and show up in BugSack.
+
 ## 2.4.0 - 2026-11-22
 
 - New: bags, talents and other windows you open during a flight now show over the hidden interface. You can turn this off under Settings > In-flight Entertainment Console: Show windows in flight.

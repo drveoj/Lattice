@@ -38,6 +38,16 @@ local ADDON, A = ...
 --  rather than showing yesterday's news as today's.
 A.CHANGELOG = {
 	{
+		version = "2.4.1",
+		date    = "2026-11-25",
+		lines   = {
+			"New: Make room. When your bags are full, one press (bin button on the bags, or a key binding) deletes your cheapest safe item, or sells it at a merchant. Settings are under Conveniences.",
+			"New: shift-click a quest in the quest log or tracker to link it in chat.",
+			"Fixed: errors in chat from nameplates during dungeon boss fights.",
+			"Errors Lattice catches are now kept between sessions in /lattice errors, and show up in BugSack.",
+		},
+	},
+	{
 		version = "2.4.0",
 		date    = "2026-11-22",
 		lines   = {
