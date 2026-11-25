@@ -869,6 +869,32 @@ local listeners = {}   -- event -> { [module or table] = handlerName or function
 -- Recorded rather than swallowed: A.lastFailure is what /aether errors diag
 -- reads and what the suite fails on, which is the difference between a pcall
 -- and a pcall worth having.
+-- ---------------------------------------------------------------------------
+-- caught errors
+--
+-- Everything our own pcalls catch goes through A:Caught: A.lastFailure, the
+-- error log (kept across logout), and on to BugSack. Printing alone lost them
+-- on logout (Joe, 2026-11-25). A.Trace is the xpcall handler that keeps the
+-- stack, which a plain pcall throws away.
+-- ---------------------------------------------------------------------------
+
+local lastStack
+
+function A.Trace(e)
+	local ok, s = pcall(debugstack, 2)
+	lastStack = (ok and type(s) == "string" and not A.IsSecret(s)) and s or nil
+	return e
+end
+
+--- Returns the message as plain text, for the caller's chat line.
+function A:Caught(where, err)
+	local text = A.IsSecret(err) and "(secret error)" or tostring(err)
+	A.lastFailure = where .. ": " .. text
+	if A.Errors and A.Errors.Caught then A.Errors:Caught(where, err, lastStack) end
+	lastStack = nil
+	return text
+end
+
 pump:SetScript("OnEvent", function(_, event, ...)
 	local bucket = listeners[event]
 	if not bucket then return end
@@ -876,11 +902,11 @@ pump:SetScript("OnEvent", function(_, event, ...)
 		local fn = handler
 		if type(handler) ~= "function" then fn = owner[handler] end
 		if fn then
-			local ok, err = pcall(fn, owner, event, ...)
+			local ok, err = xpcall(fn, A.Trace, owner, event, ...)
 			if not ok then
-				A.lastFailure = "event '" .. tostring(event) .. "': " .. tostring(err)
-				if type(owner) == "table" then owner.lastError = tostring(err) end
-				A:Print(A.Bad(A.F(L.core.pump.event, tostring(event))) .. " " .. tostring(err))
+				local text = A:Caught("event '" .. tostring(event) .. "'", err)
+				if type(owner) == "table" then owner.lastError = text end
+				A:Print(A.Bad(A.F(L.core.pump.event, tostring(event))) .. " " .. text)
 			end
 		end
 	end
@@ -979,11 +1005,11 @@ pump:SetScript("OnUpdate", function(_, elapsed)
 		tickOrder[i] = nil
 		local fn = tickers[owner]
 		if fn then
-			local ok, err = pcall(fn, owner, dt)
+			local ok, err = xpcall(fn, A.Trace, owner, dt)
 			if not ok then
-				A.lastFailure = "ticker: " .. tostring(err)
-				if type(owner) == "table" then owner.lastError = tostring(err) end
-				A:Print(A.Bad(L.core.pump.ticker) .. " " .. tostring(err))
+				local text = A:Caught("ticker", err)
+				if type(owner) == "table" then owner.lastError = text end
+				A:Print(A.Bad(L.core.pump.ticker) .. " " .. text)
 			end
 		end
 	end
@@ -1050,11 +1076,11 @@ A.lastFailure = nil
 local function RunAll(hook, label)
 	for name, m in A:IterateModules() do
 		if m.enabled and m[hook] then
-			local ok, err = pcall(m[hook], m)
+			local ok, err = xpcall(m[hook], A.Trace, m)
 			if not ok then
-				m.lastError = tostring(err)
-				A.lastFailure = label .. " '" .. name .. "': " .. tostring(err)
-				A:Print(A.Bad(label .. " '" .. name .. "':") .. " " .. tostring(err))
+				local text = A:Caught(label .. " '" .. name .. "'", err)
+				m.lastError = text
+				A:Print(A.Bad(label .. " '" .. name .. "':") .. " " .. text)
 			end
 		end
 	end
@@ -1084,10 +1110,10 @@ end
 --  halfway through changing.
 local function FireSkinChanged()
 	for i = 1, #skinListeners do
-		local ok, err = pcall(skinListeners[i])
+		local ok, err = xpcall(skinListeners[i], A.Trace)
 		if not ok then
-			A.lastFailure = tostring(err)
-			A:Print(A.Bad(L.core.fire_skin_changed.skin_listener_failed) .. " " .. tostring(err))
+			local text = A:Caught("skin listener", err)
+			A:Print(A.Bad(L.core.fire_skin_changed.skin_listener_failed) .. " " .. text)
 		end
 	end
 end
@@ -1178,14 +1204,16 @@ local function Boot()
 
 	A:UpdatePixelScale()
 	A.Config:Initialize()          -- builds A.db
+	if A.Errors then A.Errors:Load() end
 	A.Media:Initialize()           -- registers media with LibSharedMedia
 	A.Palette:Apply(A.db.profile.skin)
 
 	for name, m in A:IterateModules() do
 		if m.OnInitialize then
-			local ok, err = pcall(m.OnInitialize, m)
+			local ok, err = xpcall(m.OnInitialize, A.Trace, m)
 			if not ok then
-				A:Print(A.Bad(A.F(L.core.boot.init_s, name)) .. " " .. tostring(err))
+				local text = A:Caught("init '" .. name .. "'", err)
+				A:Print(A.Bad(A.F(L.core.boot.init_s, name)) .. " " .. text)
 			end
 		end
 	end

@@ -5428,7 +5428,14 @@ max, min, abs, floor, ceil = math.max, math.min, math.abs, math.floor, math.ceil
 -- handler and hands you the incumbent, which is the only way an addon can chain
 -- to whatever was there first - and a getter that invents a new function every
 -- call makes "did we chain or replace it?" an untestable question.
-local errorHandler = function(e) fail("errorhandler: " .. tostring(e)) end
+-- A caught error passed on by A:Caught is not a new failure: it is already in
+-- A.lastFailure, which the suite polices on its own. Counted, not failed.
+_G.__forwarded = 0
+function _G.__strictHandler(e)
+	if _G.__isCaught and _G.__isCaught(e) then _G.__forwarded = _G.__forwarded + 1 return end
+	fail("errorhandler: " .. tostring(e))
+end
+local errorHandler = _G.__strictHandler
 function geterrorhandler() return errorHandler end
 function seterrorhandler(fn)
 	if type(fn) ~= "function" then fail("seterrorhandler got " .. type(fn)) return end
@@ -6402,6 +6409,7 @@ end
 -- 2.0.0. Media paths are built from it, so the font checks below ask for it.
 local ADDON = "Lattice"
 local A = {}
+function _G.__isCaught(e) return A.lastFailure ~= nil and tostring(e) == A.lastFailure end
 
 --- FATAL, not counted.
 --
@@ -30620,6 +30628,19 @@ do
 		.. " whatever the cursor is over, and driving it here would flicker"
 		.. " somebody else's tooltip every time a vendor walked past")
 
+	-- A SECRET TITLE LINE (Forever, a dungeon boss fight): no title, no error.
+	if _G.__flavour == "camelot" then
+		A.lastFailure = nil
+		local hidden = { exists = true, name = "Hooded Figure", level = 30,
+			reaction = 4, hp = 900, hpMax = 900, canAttack = false,
+			title = _G.__SecretStandIn() }
+		local sf = NPm.plateFor(__spawnPlate("nameplate5", hidden))
+		check(A.lastFailure == nil and not (sf and sf.guild:IsShown()),
+			"a secret title line gives no title and no error ("
+			.. tostring(A.lastFailure) .. ")")
+		__despawnPlate("nameplate5")
+	end
+
 	_G.__units.nameplate2.hp = 100
 	fire("UNIT_HEALTH", "nameplate2")
 	check(d.bar:IsShown(), "which appears if somebody is beating on him")
@@ -34041,9 +34062,33 @@ do
 		.. Errors.log[1].count .. ")")
 
 	for i = 1, 40 do handler("distinct error " .. i) end
-	check(#Errors.log <= 12, "and the list is capped (" .. #Errors.log .. ")")
+	check(#Errors.log <= 20, "and the list is capped (" .. #Errors.log .. ")")
 	check(Errors.log[1].text == "distinct error 40",
 		"newest first - the last thing that broke is the thing you came to read")
+
+	-- KEPT ACROSS LOGOUT: the log is in SavedVariables, and a new session
+	-- puts the old entries back behind its own.
+	check(A.db.global.errors == Errors.log, "the error log is saved with the profile")
+	local kept = { { text = "from last session", when = "2026-11-22 21:16:00", count = 1 } }
+	local was = {}
+	for i, e in ipairs(Errors.log) do was[i] = e end
+	for i = #Errors.log, 1, -1 do Errors.log[i] = nil end
+	A.db.global.errors = kept
+	Errors:Load()
+	check(Errors.log[1] and Errors.log[1].text == "from last session",
+		"and last session's errors are there after a reload")
+
+	-- A CAUGHT ERROR is recorded with where it happened, and passed on.
+	A:RegisterEvent(Errors, "HARNESS_CAUGHT_TEST", function() error("deliberate", 0) end)
+	fire("HARNESS_CAUGHT_TEST")
+	A:UnregisterEvent(Errors, "HARNESS_CAUGHT_TEST")
+	local caught = Errors.log[1] and Errors.log[1].text
+	A.lastFailure, Errors.lastError = nil, nil
+	check(caught == "event 'HARNESS_CAUGHT_TEST': deliberate",
+		"an error the event pump catches goes in the log, not only chat ("
+		.. tostring(caught) .. ")")
+	for i = #Errors.log, 1, -1 do Errors.log[i] = nil end
+	for i, e in ipairs(was) do Errors.log[i] = e end
 
 	-- The handler runs INSIDE the client's error path. Anything it raises comes
 	-- straight back to it, and the client does not break that loop for you.
@@ -34176,7 +34221,7 @@ do
 	Errors.frame:Hide()
 
 	-- Put the strict one back for whatever runs after this.
-	seterrorhandler(function(e) fail("errorhandler: " .. tostring(e)) end)
+	seterrorhandler(_G.__strictHandler)
 	Errors.installed = false
 end
 

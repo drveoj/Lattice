@@ -32,19 +32,31 @@ local W, Palette = A.Widgets, A.Palette
 
 --- How many to keep. Enough to catch a cascade - the first error is usually the
 --  real one and the rest are its wreckage - without holding a session's worth.
-local MAX = 12
+local MAX = 20
 
 local log = {}
 Errors.log = log
 
 local previous
 
+-- KEPT ACROSS LOGOUT, in SavedVariables. An error from a dungeon on Sunday
+-- is still there to copy out on Monday (Joe, 2026-11-25).
+local function Save()
+	if A.db and A.db.global then A.db.global.errors = log end
+end
+
+local function Plain(msg)
+	if A.IsSecret(msg) then return "(secret error)" end
+	return tostring(msg or "")
+end
+
 -- ---------------------------------------------------------------------------
 -- catching
 -- ---------------------------------------------------------------------------
 
-local function Record(msg)
-	local text = tostring(msg or "")
+local function Record(msg, stack, where)
+	local text = Plain(msg)
+	if where then text = where .. ": " .. text end
 
 	-- Same error twice in a row is a tick loop, not two failures. Count it
 	-- rather than filling the box with one line repeated twelve times.
@@ -56,12 +68,33 @@ local function Record(msg)
 
 	table.insert(log, 1, {
 		text  = text,
-		when  = (date and date("%H:%M:%S")) or "",
-		stack = (debugstack and debugstack(3)) or nil,
+		when  = (date and date("%Y-%m-%d %H:%M:%S")) or "",
+		stack = stack or (debugstack and debugstack(3)) or nil,
 		count = 1,
 	})
 
 	for i = #log, MAX + 1, -1 do log[i] = nil end
+	Save()
+end
+
+--- The last sessions' errors, behind this one's. Called once the db exists.
+function Errors:Load()
+	local kept = A.db and A.db.global and A.db.global.errors
+	if type(kept) == "table" and kept ~= log then
+		for _, e in ipairs(kept) do
+			if #log >= MAX then break end
+			if type(e) == "table" then log[#log + 1] = e end
+		end
+	end
+	Save()
+end
+
+--- An error one of our own pcalls caught. Kept like any other, and handed to
+--  whatever had the error handler before us (BugSack, or the client's own),
+--  so a caught error is reported rather than only printed.
+function Errors:Caught(where, err, stack)
+	pcall(Record, err, stack, where)
+	if previous then pcall(previous, where .. ": " .. Plain(err)) end
 end
 
 function Errors:Install()

@@ -1172,14 +1172,14 @@ local function OpenAtStub(owner, generator, stub)
 	end
 	-- Recorded and said, not swallowed: falling back quietly to the cursor
 	-- menu hid this failing in game behind a green suite (Joe, twice).
-	local ok, err = pcall(function()
+	local ok, err = xpcall(function()
 		local desc = MU.CreateRootMenuDescription(mixin)
 		M.PopulateDescription(generator, owner, desc)
 		M.GetManager():OpenMenu(owner, desc, anchor)
-	end)
+	end, A.Trace)
 	if not ok then
-		A.lastFailure = "tracking menu: " .. tostring(err)
-		A:Print(A.Bad(L.trunk.tracking_menu_failed) .. " " .. tostring(err))
+		local text = A:Caught("tracking menu", err)
+		A:Print(A.Bad(L.trunk.tracking_menu_failed) .. " " .. text)
 	end
 	return ok
 end

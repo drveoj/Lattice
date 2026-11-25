@@ -381,10 +381,11 @@ function Playback:Poll()
 	self._polled = self.segStart
 
 	cancelTimer()
-	local ok, err = pcall(advance)
+	local ok, err = xpcall(advance, A.Trace)
 	if not ok then
 		Playback.state = "stopped"
-		A:Print(A.Bad(L.playback.poll.ifec_programme_stopped_boundary) .. ": " .. tostring(err))
+		local text = A:Caught("ifec playback", err)
+		A:Print(A.Bad(L.playback.poll.ifec_programme_stopped_boundary) .. ": " .. text)
 	end
 	return true
 end
