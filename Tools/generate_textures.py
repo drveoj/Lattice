@@ -1195,6 +1195,8 @@ ICON_ORDER = [
     # WoW Forever's micro menu, the doors Era does not have (2026-10-12)
     "professions", "legacy", "groupfinder", "collections",
     "journal", "housing", "shop",
+    # making room in the bags (issue #4)
+    "bin",
 ]
 
 
@@ -1675,6 +1677,13 @@ def _glyph(name, cell):
         # and the shop is not your inventory.
         return U(seg(26, 40, 74, 40), seg(74, 40, 102, 64), seg(102, 64, 74, 88),
                  seg(74, 88, 26, 88), seg(26, 88, 26, 40), circ(78, 64, 6))
+
+    if name == "bin":
+        # A bin: lid, handle, a body narrower at the foot, two staves.
+        return U(seg(26, 38, 102, 38),
+                 seg(52, 38, 52, 26), seg(52, 26, 76, 26), seg(76, 26, 76, 38),
+                 seg(36, 50, 42, 106), seg(92, 50, 86, 106), seg(42, 106, 86, 106),
+                 seg(56, 60, 57, 94), seg(72, 60, 71, 94))
 
     return INF
 

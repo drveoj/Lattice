@@ -280,6 +280,31 @@ function A.Quest.Objectives(index)
 	return out
 end
 
+--- Shift-click a quest into the open chat box (issue #5). Blizzard's order:
+--  only with the CHATLINK modifier and a chat box open, so with chat closed
+--  the caller's own shift-click still runs. Forever has quest links
+--  (Blizzard_QuestObjectiveTracker.lua:52); Era's own log puts the name in
+--  as text (Vanilla/QuestLogFrame.lua:478-484), and so does this there.
+--  Returns true if it put something in.
+function A.Quest.LinkToChat(questID, title)
+	if not (IsModifiedClick and IsModifiedClick("CHATLINK")) then return false end
+	local U = _G.ChatFrameUtil
+	local active = (U and U.GetActiveWindow and U.GetActiveWindow())
+		or (_G.ChatEdit_GetActiveWindow and _G.ChatEdit_GetActiveWindow())
+	if not active then return false end
+
+	local link
+	if questID and _G.GetQuestLink then
+		local ok, l = pcall(_G.GetQuestLink, questID)
+		if ok and type(l) == "string" and l ~= "" then link = l end
+	end
+	link = link or title
+	local insert = (U and U.InsertLink) or _G.ChatEdit_InsertLink
+	if not (link and link ~= "" and insert) then return false end
+	insert(link)
+	return true
+end
+
 --- Put the client's own selection cursor on a quest, by LOG INDEX.
 --
 --  The old client takes the index; WoW Forever takes a questID

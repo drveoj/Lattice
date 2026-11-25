@@ -1069,6 +1069,8 @@ function BuildZoneRow(parent)
 end
 
 local function QuestRowClicked(row)
+	-- Shift-click with chat open links it, as Blizzard's log does (issue #5).
+	if A.Quest.LinkToChat(row.questID, row.questTitle) then return end
 	if row.selKey then QL:Select(row.selKey) end
 end
 
@@ -1433,6 +1435,7 @@ function QL:RefreshList()
 			-- everything else reads as normal body text, selected or not.
 			W.Color(row.title, e.failed and c.danger or (selected and c.text or c.textDim))
 			row.questIndex, row.questID, row.selKey = e.index, e.questID, e.key
+			row.questTitle = e.title
 			y = y + ROW_H + ROW_GAP
 		end
 

@@ -826,19 +826,13 @@ local function BuildSortButton(parent, onClick, tip, glyph)
 	b.bars = {}
 
 	local left = (W.CHROME_HIT - ICON_SIZE) / 2
-	local function rule(w, h, x, y)
+	if glyph then
+		-- An icon off the shared sheet (Media.icons).
 		local t = b:CreateTexture(nil, "ARTWORK")
-		t:SetTexture(Media.texture.flat)
-		t:SetSize(w, h)
-		t:SetPoint("CENTER", b, "CENTER", x, y)
-		b.bars[#b.bars + 1] = t
-	end
-	if glyph == "bin" then
-		-- A bin, for making room: lid, handle, and three staves.
-		local px = A:Px(2)
-		rule(ICON_SIZE, px, 0, 5)
-		rule(4, px, 0, 7)
-		for i = -1, 1 do rule(px, ICON_SIZE - 6, i * 4, -2) end
+		t:SetSize(ICON_SIZE, ICON_SIZE)
+		t:SetPoint("CENTER", b, "CENTER", 0, 0)
+		Media:SetIcon(t, glyph)
+		b.bars[1] = t
 	else
 		for i = 1, 3 do
 			local t = b:CreateTexture(nil, "ARTWORK")
@@ -945,8 +939,11 @@ local function BuildSearch(frame)
 		corner = W.WELL_CORNER, fill = "glassSoft", edge = "glassEdge",
 	})
 	search:SetHeight(SEARCH_H)
-	search:SetWidth(SEARCH_W)
-	search:SetPoint("RIGHT", head.sort, "LEFT", -HEAD_GAP, 0)
+	-- Left of the bin where there is one, and narrower by it, so the title
+	-- and count keep their room.
+	local roomW = head.room and (W.CHROME_HIT + 2) or 0
+	search:SetWidth(SEARCH_W - roomW)
+	search:SetPoint("RIGHT", head.room or head.sort, "LEFT", -HEAD_GAP, 0)
 	frame.search = search
 
 	-- The deck's magnifier. There is no vector drawing in the WoW UI, so it is

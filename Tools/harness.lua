@@ -7172,6 +7172,15 @@ end
 
 function ChatFrameUtil.ResolvePrefixedChannelName(name) return name end
 
+-- The chat box, open or shut, and what a shift-click put in it.
+_G.__chatActive = false
+function ChatFrameUtil.GetActiveWindow() return _G.__chatActive and ChatFrame1EditBox or nil end
+function ChatFrameUtil.InsertLink(link) _G.__insertedLink = link return true end
+-- Forever has quest links; Era's own UI never builds one.
+if _G.__flavour == "camelot" then
+	function GetQuestLink(id) return "|cffffff00|Hquest:" .. id .. ":0|h[q" .. id .. "]|h|r" end
+end
+
 --- The order here is the fact the whole module leans on: Blizzard class-colours
 --  the name, *then* runs the sender-name filters, and only afterwards does the
 --  caller wrap the result in a player link. So a filter's return value becomes
@@ -16777,6 +16786,26 @@ end
 check(QT.nodes and QT.nodes[1] and QT.nodes[1].button and A.Trunk:Get("world").frame:IsShown(),
 	"the tracked quests are nodes on the World trunk")
 
+-- Shift-click with chat open links the quest; closed, it untracks (issue #5).
+function _G.__shiftLinkTest()
+	local n, h = QT.nodes[1], TRow(1)
+	local id = h.questID
+	_G.__shift, _G.__chatActive, _G.__clickAnswer, _G.__insertedLink = true, true, "CHATLINK", nil
+	n.onClick(n, "LeftButton")
+	check(_G.__insertedLink and _G.__insertedLink:find(
+		_G.__flavour == "camelot" and ("|Hquest:" .. id .. ":") or h.questTitle, 1, true)
+		and QT.IsTracked(id),
+		"shift-click in the tracker with chat open links the quest and keeps it tracked ("
+		.. tostring(_G.__insertedLink) .. ")")
+	_G.__chatActive, _G.__insertedLink = false, nil
+	n.onClick(n, "LeftButton")
+	check(_G.__insertedLink == nil and not QT.IsTracked(id),
+		"with chat closed, shift-click still untracks")
+	QT.SetTracked(id, true)
+	QT:Refresh()
+	_G.__shift, _G.__clickAnswer = nil, nil
+end
+
 -- THE REFERENCE SCREEN for every tracker section: the quests are nodes on the
 -- World trunk, and how many fit depends on where the minimap sits and how tall
 -- the screen is. Put back after the last tracker section.
@@ -16807,6 +16836,7 @@ do
 		.. tostring(A.Trunk:Get("world"):Room()) .. ", screen " .. UIParent:GetWidth() .. "x"
 		.. UIParent:GetHeight() .. ", pill bottom "
 		.. tostring(select(2, A.Movers.PointAt(A:GetModule("minimap").pill, "BOTTOM"))) .. ")")
+	_G.__shiftLinkTest()
 	-- 6a's geometry: under the Quest Log node, 32 apart (compact), each
 	-- quest's text ending 8 short of its node, its title level with it. Both
 	-- tightened in game (Joe): the first quest 36 under the Quest Log node,
@@ -27236,6 +27266,38 @@ do
 	_G.__clickAnswer = nil
 end
 
+print("== quest log and tracker: shift-click links the quest (issue #5) ==")
+do
+	local camelot = _G.__flavour == "camelot"
+	local function want(id, title)
+		return camelot and ("|Hquest:" .. id .. ":") or title
+	end
+
+	-- The log: a quest row, chat open, shift-click.
+	QLog:RefreshList()
+	local row
+	for _, r in ipairs(QLog.win.list.questRows) do
+		if r.selKey and r.questTitle and r:IsShown() then row = r break end
+	end
+	check(row ~= nil, "the log has a quest row to click")
+	if row then
+		local before = QLog.selectedID
+		_G.__insertedLink, _G.__chatActive, _G.__clickAnswer = nil, true, "CHATLINK"
+		row:GetScript("OnMouseUp")(row, "LeftButton")
+		check(_G.__insertedLink and _G.__insertedLink:find(want(row.questID, row.questTitle), 1, true),
+			"shift-click with chat open puts the quest in chat ("
+			.. tostring(_G.__insertedLink) .. ")")
+		check(QLog.selectedID == before, "and doesn't change the selection")
+
+		_G.__insertedLink, _G.__chatActive = nil, false
+		row:GetScript("OnMouseUp")(row, "LeftButton")
+		check(_G.__insertedLink == nil and QLog.selectedID == row.selKey,
+			"with chat closed it selects, as before")
+	end
+
+	_G.__chatActive, _G.__clickAnswer, _G.__insertedLink = false, nil, nil
+end
+
 print("== quest log: track and share ==")
 do
 	local QT2 = A:GetModule("questtracker")
@@ -28369,8 +28431,12 @@ do
 		"the search field sits in the header band rather than on a row of its"
 		.. " own under it")
 	local sp, srel = f.search:GetPoint(1)
-	check(sp == "RIGHT" and srel == head.sort,
+	check(sp == "RIGHT" and srel == (head.room or head.sort),
 		"to the left of the header's buttons, as the quest log's is")
+	-- The bin (issue #4) is one of those buttons, so the field clears it.
+	check(head.room and srel == head.room
+		and head.room.bars[1]:GetTexture() == A.Media.icons.file,
+		"left of the make-room bin, which is drawn from the icon sheet")
 
 	-- AND THE RECESS STOPS ABOVE THE FOOTER. A well is drawn a little LARGER
 	-- than what scrolls in it, so a window sized to the scroll frame alone

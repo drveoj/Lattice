@@ -207,6 +207,8 @@ Media.icons = {
 		-- WoW Forever's micro menu: the doors Era does not have.
 		"professions", "legacy", "groupfinder", "collections",
 		"journal", "housing", "shop",
+		-- Making room in the bags (issue #4).
+		"bin",
 	},
 
 	--- One drawing, more than one name for it.

@@ -522,6 +522,8 @@ local function RowClicked(row, button)
 		return
 	end
 
+	-- With chat open, shift-click links it (issue #5); closed, it untracks.
+	if A.Quest.LinkToChat(row.questID, row.questTitle) then return end
 	if IsShiftKeyDown and IsShiftKeyDown() then
 		Untrack(row.questID)
 		return
