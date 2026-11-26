@@ -3561,7 +3561,7 @@ if _G.__flavour == "camelot" then
 		-- What the guard is actually for is not CALLING a throwing API over and
 		-- over, several times a second, per aura, per unit.
 		_G.__auraReads = _G.__auraReads + 1
-		if _G.__aurasRestricted then
+		if _G.__aurasRestricted or (_G.__secretAuraIndex and _G.__secretAuraIndex[unit] == index) then
 			error("GetAuraDataByIndex(): Auras cannot be accessed when secret"
 				.. " while tainted by 'AetherUI'", 2)
 		end
@@ -5703,6 +5703,12 @@ if _G.__flavour == "camelot" then
 	C_Secrets = C_Secrets or {}
 	function C_Secrets.ShouldAurasBeSecret()
 		return _G.__aurasRestricted == true
+	end
+	-- Per aura (SecretPredicateAPIDocumentation): one aura can be secret while
+	-- the rest are not. __secretAuraIndex[unit] = index marks just that one.
+	_G.__secretAuraIndex = {}
+	function C_Secrets.ShouldUnitAuraIndexBeSecret(unit, index)
+		return _G.__aurasRestricted == true or _G.__secretAuraIndex[unit] == index
 	end
 end
 
@@ -15624,6 +15630,16 @@ section("a restricted aura read is refused, not merely secret", function()
 	check(Aur.AurasRestricted() == false and Aur.GetAura("player", 1, "HELPFUL") ~= nil,
 		"lifting the restriction restores the scan - it must not latch, or a"
 		.. " zone edge would empty the tray for the rest of the session")
+
+	-- ONE SECRET AURA among readable ones: asked per index, so it is skipped
+	-- and no read is attempted (#10: no pcall to catch it any more).
+	if _G.__secretAuraIndex then
+		_G.__secretAuraIndex.player = 1
+		local okOne, one = pcall(Aur.GetAura, "player", 1, "HELPFUL")
+		check(okOne and one == nil, "a single secret aura is skipped, not read ("
+			.. tostring(okOne and "" or one) .. ")")
+		_G.__secretAuraIndex.player = nil
+	end
 	-- The tile tooltip guard (the PTR feedback race, 2026-09-23) is gone from
 	-- here with the tiles: on Forever the game's own buttons show the tooltip.
 end)

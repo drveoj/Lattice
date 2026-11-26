@@ -88,47 +88,19 @@ local W, Media, Palette, Glass = A.Widgets, A.Media, A.Palette, A.Glass
 --  insecure by definition; the API simply refuses an insecure caller while the
 --  data is restricted, and names whoever is on the stack.
 --
---  Ask first, probe second, and cache for the frame:
---
---  1. `C_Secrets.ShouldAurasBeSecret()` is the client's own question and costs
---     nothing.
---  2. Where it cannot answer, a pcall on one known-cheap read says whether the
---     door is open. Restriction can engage between frames, so a stale "open"
---     is possible - hence only ever caching within the same GetTime().
---  3. Failure means restricted, never "no auras": the difference is a tray
---     that goes blank for a moment versus one that lies about what is on you.
---
---  Same shape EllesmereUI arrived at, and for the same reason. Era has no
---  C_Secrets and never refuses the read, so this answers false there and the
---  scan below is untouched.
-local aurasRestrictedAt = -1
+--  ASKED, NEVER PROBED: the client's own predicates (C_Secrets, Forever's
+--  SecretPredicateAPIDocumentation) say whether a read would be refused, so
+--  nothing has to try it in a pcall and see (#10). Era has no C_Secrets and
+--  never refuses the read, so this answers false there.
 function Aur.AurasRestricted()
-	local now = (GetTime and GetTime()) or 0
+	return (C_Secrets and C_Secrets.ShouldAurasBeSecret
+		and C_Secrets.ShouldAurasBeSecret()) and true or false
+end
 
-	-- WHEN THE CLIENT WILL ANSWER, TAKE ITS ANSWER AND CLEAR THE STAMP. The
-	-- frame cache below exists for the probe path only, and left in place it can
-	-- LATCH: a "no" that never expires empties the tray for the rest of the
-	-- session. Caught by the test that lifts the restriction and looks again.
-	if C_Secrets and C_Secrets.ShouldAurasBeSecret then
-		if C_Secrets.ShouldAurasBeSecret() then
-			aurasRestrictedAt = now
-			return true
-		end
-		aurasRestrictedAt = -1
-		return false
-	end
-
-	if now == aurasRestrictedAt then return true end
-
-	if C_UnitAuras and C_UnitAuras.GetAuraDataByIndex then
-		if pcall(C_UnitAuras.GetAuraDataByIndex, "player", 1, "HELPFUL") then
-			return false
-		end
-		aurasRestrictedAt = now
-		return true
-	end
-
-	return false
+--- Would reading this one aura be refused? Per index, as the client asks it.
+local function AuraSecret(unit, index, filter)
+	local fn = C_Secrets and C_Secrets.ShouldUnitAuraIndexBeSecret
+	return fn and fn(unit, index, filter) and true or false
 end
 
 --- Returns: name, texture, count, auraType, duration, expirationTime, isMine,
@@ -147,16 +119,10 @@ local function GetAura(unit, index, filter)
 	-- The read is REFUSED, not merely secret - see Aur.AurasRestricted. Answer
 	-- "no aura here" and let every caller's existing end-of-list handling do the
 	-- rest, rather than teaching all of them about a third state.
-	if Aur.AurasRestricted() then return nil end
+	if Aur.AurasRestricted() or AuraSecret(unit, index, filter) then return nil end
 
 	if C_UnitAuras and C_UnitAuras.GetAuraDataByIndex then
-		-- pcall even so: the frame-scoped cache above can go stale between the
-		-- probe and this call, and one throw here is a whole tray of them.
-		local ok, d = pcall(C_UnitAuras.GetAuraDataByIndex, unit, index, filter)
-		if not ok then
-			aurasRestrictedAt = (GetTime and GetTime()) or 0
-			return nil
-		end
+		local d = C_UnitAuras.GetAuraDataByIndex(unit, index, filter)
 		if not d then return nil end
 		local mine = d.isFromPlayerOrPlayerPet
 		if mine == nil then mine = (d.sourceUnit == "player" or d.sourceUnit == "pet") end
@@ -327,9 +293,9 @@ local function TileEnter(self)
 	-- the aura by index after us - which the client refuses from our call, so
 	-- the tooltip turned into an error (Blizzard_PTRFeedback_Tooltips.lua:24,
 	-- 2026-09-23).
-	if Aur.AurasRestricted() then return end
+	if Aur.AurasRestricted() or AuraSecret(p.unit, p.index, p.filter) then return end
 	GameTooltip:SetOwner(p, "ANCHOR_BOTTOM")
-	pcall(GameTooltip.SetUnitAura, GameTooltip, p.unit, p.index, p.filter)
+	GameTooltip:SetUnitAura(p.unit, p.index, p.filter)
 	GameTooltip:Show()
 end
 
@@ -373,9 +339,9 @@ local function CancelAura(p)
 	-- so the exact call is the right one here, and the name is only the fallback.
 	-- In combat it is the other way round, which is what the macro is for.
 	if CancelUnitBuff and p.index then
-		pcall(CancelUnitBuff, "player", p.index, "HELPFUL")
+		CancelUnitBuff("player", p.index, "HELPFUL")
 	elseif CancelSpellByName then
-		pcall(CancelSpellByName, p._auraName)
+		CancelSpellByName(p._auraName)
 	end
 end
 
@@ -512,8 +478,8 @@ end
 local function AddCancel(p)
 	if p.click or not CreateFrame then return end
 
-	local ok, click = pcall(CreateFrame, "Button", nil, p, "SecureActionButtonTemplate")
-	if not ok or not click then
+	local click = CreateFrame("Button", nil, p, "SecureActionButtonTemplate")
+	if not click then
 		p.clickFailed = true
 		return
 	end
@@ -899,23 +865,22 @@ Aur.blizzardFrames = {
 function Aur:HideBlizzard()
 	local cfg = A.Config:Module("auras")
 	if cfg.hideBlizzard == false then return end
+	-- Hiding a client frame is refused in a fight; asked again after one.
+	if InCombatLockdown() then return end
 
 	self.hideReport = self.hideReport or {}
 	for _, name in ipairs(Aur.blizzardFrames) do
 		local f = _G[name]
 		if not f then
 			self.hideReport[name] = "absent"
-		elseif f.IsForbidden and select(2, pcall(f.IsForbidden, f)) then
+		elseif f.IsForbidden and f:IsForbidden() then
 			self.hideReport[name] = "forbidden"
 		else
-			-- One pcall per call: bundling them means a throw on the first
-			-- silently skips the rest, which is how the action bar sweep hid
-			-- nothing for two rounds.
-			pcall(f.UnregisterAllEvents, f)
-			pcall(f.Hide, f)
-			if f.HookScript and not f.__aetherHooked then
+			f:UnregisterAllEvents()
+			f:Hide()
+			if not f.__aetherHooked then
 				f.__aetherHooked = true
-				pcall(f.HookScript, f, "OnShow", function(self)
+				f:HookScript("OnShow", function(self)
 					if not InCombatLockdown() then self:Hide() end
 				end)
 			end
@@ -963,8 +928,8 @@ local ENCHANT_SLOTS = { 16, 17 }
 --  and the first one that is there gives the time and charges; the weapon's
 --  tooltip names them all. False on a secret, which shows nothing.
 local function ReadHand(weaponSlot, r)
-	local ok, list = pcall(C_Item.GetWeaponEnchantInfo, weaponSlot)
-	if not ok or type(list) ~= "table" then return false end
+	local list = C_Item.GetWeaponEnchantInfo(weaponSlot)
+	if type(list) ~= "table" then return false end
 	r.has, r.left, r.charges = false, 0, 0
 	for _, e in ipairs(list) do
 		if A.IsSecret(e.hasEnchant, e.timeLeft, e.charges) then return false end
@@ -994,8 +959,7 @@ local function ReadEnchants(out)
 	end
 	out.source = "GetWeaponEnchantInfo"
 	if not GetWeaponEnchantInfo then return false end
-	local ok, hasMH, mhLeft, mhCharges, _, hasOH, ohLeft, ohCharges = pcall(GetWeaponEnchantInfo)
-	if not ok then return false end
+	local hasMH, mhLeft, mhCharges, _, hasOH, ohLeft, ohCharges = GetWeaponEnchantInfo()
 	local mh, oh = out[1], out[2]
 	mh.has, mh.left, mh.charges = hasMH and true or false, (mhLeft or 0) / 1000, mhCharges or 0
 	oh.has, oh.left, oh.charges = hasOH and true or false, (ohLeft or 0) / 1000, ohCharges or 0
@@ -1014,9 +978,9 @@ local function EnchantEnter(self)
 	if self._parked or not self.slot then return end
 	GameTooltip:SetOwner(self, "ANCHOR_TOP")
 	if GameTooltip_SuppressAutomaticCompareItem then
-		pcall(GameTooltip_SuppressAutomaticCompareItem, GameTooltip)
+		GameTooltip_SuppressAutomaticCompareItem(GameTooltip)
 	end
-	pcall(GameTooltip.SetInventoryItem, GameTooltip, "player", self.slot)
+	GameTooltip:SetInventoryItem("player", self.slot)
 	GameTooltip:Show()
 end
 
@@ -1208,7 +1172,7 @@ end
 local function RuleFormatter(points)
 	if not (C_StringUtil and C_StringUtil.CreateNumericRuleFormatter) then return nil end
 	local f = C_StringUtil.CreateNumericRuleFormatter()
-	if not pcall(f.SetBreakpoints, f, points) then return nil end
+	f:SetBreakpoints(points)
 	return f
 end
 
@@ -1260,7 +1224,7 @@ end
 local function Initializer(lookKey, tray, F)
 	local look = LOOKS[lookKey]
 	return function(button)
-		local ok, err = pcall(function()
+		local ok, err = xpcall(function()
 			local c = Palette.c
 			-- Sized already: W.CreateAuraContainer does that first, for every
 			-- container, before this runs.
@@ -1305,9 +1269,10 @@ local function Initializer(lookKey, tray, F)
 			-- Handed over. From here on the client writes these, not us.
 			button:SetIcon(icon)
 			local say = Words()
-			if not (say.timerOpts
-				and pcall(button.SetDurationText, button, timer.text, say.timerOpts)) then
-				-- The client's own words, always on, if it would not take ours.
+			if say.timerOpts then
+				button:SetDurationText(timer.text, say.timerOpts)
+			else
+				-- The client's own words, always on, where ours cannot be built.
 				button:SetDurationText(timer.text, {})
 				F.timerRule = false
 			end
@@ -1318,13 +1283,13 @@ local function Initializer(lookKey, tray, F)
 			else
 				-- Clicks off, motion kept for the tooltip: a click on a square
 				-- that cannot do anything should reach whatever is under it.
-				pcall(button.SetMouseClickEnabled, button, false)
+				button:SetMouseClickEnabled(false)
 			end
 			-- Away from the capsule, so the tooltip never covers it.
-			pcall(button.SetTooltipAnchorPoint, button,
-				tray.above and "ANCHOR_TOP" or "ANCHOR_BOTTOM")
-		end)
-		if not ok then F.initError = tostring(err) end
+			button:SetTooltipAnchorPoint(tray.above and "ANCHOR_TOP" or "ANCHOR_BOTTOM")
+		end, A.Trace)
+		-- Reported, and kept for /lattice auras.
+		if not ok then F.initError = A:Caught("aura square", err) end
 	end
 end
 
@@ -1388,9 +1353,8 @@ local function FaceTray(t, mirror)
 	c:ClearAllPoints()
 	c:SetPoint(t.corner, t.host, t.corner,
 		mirror and -CLIP_PAD or CLIP_PAD, t.above and CLIP_PAD or -CLIP_PAD)
-	pcall(c.SetFlowLayoutAnchorPoint, c, t.corner)
-	pcall(c.SetFlowLayoutGrowthDirection, c,
-		mirror and FD.Left or FD.Right, t.above and FD.Up or FD.Down)
+	c:SetFlowLayoutAnchorPoint(t.corner)
+	c:SetFlowLayoutGrowthDirection(mirror and FD.Left or FD.Right, t.above and FD.Up or FD.Down)
 end
 
 function Aur:BuildForever()
@@ -1472,8 +1436,7 @@ function Aur:AnchorForever()
 		if c then
 			for _, g in ipairs(t.groups) do
 				if g.theirs then
-					pcall(c.SetAuraGroupEnabled, c, g.key,
-						not (SideFor(cfg, t).onlyMine == true))
+					c:SetAuraGroupEnabled(g.key, not (SideFor(cfg, t).onlyMine == true))
 				end
 			end
 		end
@@ -1498,9 +1461,9 @@ function Aur:SetEnergy(combat)
 				line = COMBAT
 				count = combat and (t.lines or 1) * COMBAT or (t.rest or REST)
 			end
-			pcall(c.SetFlowLayoutMaximumLineSize, c, line * SQ_STEP - SQ_GAP)
+			c:SetFlowLayoutMaximumLineSize(line * SQ_STEP - SQ_GAP)
 			for _, g in ipairs(t.groups) do
-				pcall(c.SetAuraGroupMaxFrameCount, c, g.key, count)
+				c:SetAuraGroupMaxFrameCount(g.key, count)
 			end
 		end
 	end
@@ -1519,13 +1482,13 @@ function Aur:RestyleForever()
 	for _, p in ipairs(F.paint) do
 		local col = c[p.token]
 		if col then
-			pcall(p.tex.SetVertexColor, p.tex, col[1], col[2], col[3], p.alpha or col[4] or 1)
+			p.tex:SetVertexColor(col[1], col[2], col[3], p.alpha or col[4] or 1)
 		end
 	end
 	local cfg = A.Config:Module("auras")
 	for _, tag in ipairs(F.tags) do
-		pcall(tag.timer.SetShown, tag.timer, cfg.showTime ~= false)
-		pcall(tag.stack.SetShown, tag.stack, cfg.showCount ~= false)
+		tag.timer:SetShown(cfg.showTime ~= false)
+		tag.stack:SetShown(cfg.showCount ~= false)
 	end
 end
 
@@ -1758,7 +1721,7 @@ end
 function Aur:UpdateUnit(unit)
 	if self.forever then
 		for _, t in ipairs(self.forever.trays) do
-			if t.unit == unit and t.container then pcall(t.container.UpdateAllAuras, t.container) end
+			if t.unit == unit and t.container then t.container:UpdateAllAuras() end
 		end
 		return
 	end
@@ -1770,7 +1733,7 @@ end
 function Aur:UpdateAll()
 	if self.forever then
 		for _, t in ipairs(self.forever.trays) do
-			if t.container then pcall(t.container.UpdateAllAuras, t.container) end
+			if t.container then t.container:UpdateAllAuras() end
 		end
 		return
 	end
