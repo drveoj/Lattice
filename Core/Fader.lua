@@ -196,10 +196,14 @@ local function ZenModule()
 	return nil
 end
 
+--- Secret in an instance on Forever: the pcall this used to have let the
+--  secret through to the test below it, which threw on every fader tick
+--  (Joe, 2026-11-26). A secret answer counts as not AFK.
 local function PlayerIsAFK()
 	if not UnitIsAFK then return false end
-	local ok, afk = pcall(UnitIsAFK, "player")
-	return (ok and afk) and true or false
+	local afk = UnitIsAFK("player")
+	if A.IsSecret(afk) then return false end
+	return afk and true or false
 end
 
 Fader.PlayerIsAFK = PlayerIsAFK
