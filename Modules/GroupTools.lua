@@ -269,9 +269,21 @@ local ACTIONS = {
 --  unit is always "target" - so with nothing targeted every well here is inert,
 --  and the ring showing which mark is 'active' is really showing what your
 --  current target is wearing. Both follow the target rather than the party.
+--
+--  ON A SECURE BUTTON, like the world wells below. SetRaidTarget is protected
+--  on both clients and refused from our own Lua (ADDON_ACTION_FORBIDDEN, Joe,
+--  2026-11-26); the client's raidtarget action (SecureTemplates.lua:582-603)
+--  runs it untainted. EllesmereUI found the same (EUI_Quickdraw_Actions.lua:
+--  505-537). So these too are made and placed out of a fight only.
 local function BuildWell(panel, index)
-	local b = W.CreateButton(panel, { corner = 10, fill = "cardBg", edge = "cardEdge" })
+	local b = W.CreateButton(panel, { corner = 10, fill = "cardBg", edge = "cardEdge",
+		template = "SecureActionButtonTemplate" })
 	b:SetSize(WELL, WELL)
+	b:RegisterForClicks("AnyUp")
+	b:SetAttribute("type", "raidtarget")
+	b:SetAttribute("unit", "target")
+	if index then b:SetAttribute("marker", tostring(index)) end
+	b:SetAttribute("action", index and "set" or "clear")
 	b.index = index
 
 	if index then
@@ -289,13 +301,10 @@ local function BuildWell(panel, index)
 		b.label = label
 	end
 
-	b:SetScript("OnClick", function(self)
-		if not UnitExists("target") or not SetRaidTarget then return end
-		SetRaidTarget("target", self.index or 0)
-		GT:RefreshPanel()
-	end)
-	b:SetScript("OnEnter", function(self) W.SetButtonState(self, self.__on, true) end)
-	b:SetScript("OnLeave", function(self) W.SetButtonState(self, self.__on, false) end)
+	-- Hooked, not set: the template's own scripts stay as they are.
+	b:HookScript("OnClick", function() GT:RefreshPanel() end)
+	b:HookScript("OnEnter", function(self) W.SetButtonState(self, self.__on, true) end)
+	b:HookScript("OnLeave", function(self) W.SetButtonState(self, self.__on, false) end)
 	return b
 end
 
@@ -449,30 +458,10 @@ function GT:BuildPanel()
 	p.marks:SetPoint("TOPRIGHT", p.markBox, "TOPRIGHT", 0, 0)
 	p.marks:Set(_G.RAID_TARGET_ICON or "Target markers", "")
 
-	-- FIVE ACROSS, TWO DOWN: eight marks and a Clear spanning the last two
-	-- cells, which is the brief's grid and also the one that fits 320 wide.
-	-- HIGHEST INDEX FIRST: skull, cross, square, moon, triangle, diamond,
-	-- circle, star. That is not an arrangement, it is THE arrangement -
-	-- Blizzard's own grid has read that way since the marks existed, and
-	-- everybody reaches for the skull in the top-left without looking.
-	p.wells = {}
-	for slot = 1, MARKERS do
-		local index = MARKERS + 1 - slot
-		local b = BuildWell(p, index)
-		local col, row = (slot - 1) % 5, math.floor((slot - 1) / 5)
-		b:SetPoint("TOPLEFT", p.markBox, "TOPLEFT",
-			col * (WELL + WELL_GAP), -HEAD_H - row * (WELL + WELL_GAP))
-		p.wells[slot] = b
-	end
+	-- The mark wells are secure, so they are made in GT:BuildGrid, out of a
+	-- fight only, and laid out by GT:PlaceGrid.
 
-	local clear = BuildWell(p, nil)
-	clear:SetWidth(WELL * 2 + WELL_GAP)
-	clear:SetPoint("TOPLEFT", p.markBox, "TOPLEFT",
-		3 * (WELL + WELL_GAP), -HEAD_H - (WELL + WELL_GAP))
-	p.clear = clear
-
-	-- The world markers: the same block under its own heading. Its wells are
-	-- secure, so they are made in GT:BuildWorld, out of a fight only.
+	-- The world markers: the same block under its own heading.
 	p.worldBox = CreateFrame("Frame", nil, p)
 	p.worldBox:SetSize(PANEL_W - PANEL_PAD * 2, HEAD_H + 2 * (WELL + WELL_GAP))
 	p.world = A.Trunk.Head(p)
@@ -503,21 +492,34 @@ function GT:BuildPanel()
 	return p
 end
 
---- The world-marker wells, made once and out of a fight: a secure button's
+--- The two secure grids: target marks and world markers. Same shape - eight
+--  wells, five across and two down, HIGHEST MARK FIRST (skull top-left, as
+--  in Blizzard's own grid), and a Clear spanning the last two cells.
+local GRIDS = {
+	marks = { box = "markBox", wells = "wells", clear = "clear", home = "marksHome",
+		make = function(p, slot) return BuildWell(p.markBox, MARKERS + 1 - slot) end,
+		makeClear = function(p) return BuildWell(p.markBox, nil) end },
+	world = { box = "worldBox", wells = "worldWells", clear = "worldClear", home = "worldHome",
+		make = function(p, slot)
+			return BuildWorldWell(p.worldBox, WORLD_ORDER[slot], MARKERS + 1 - slot)
+		end,
+		makeClear = function(p) return BuildWorldWell(p.worldBox, nil, nil) end },
+}
+
+--- A grid's wells, made once and out of a fight: a secure button's
 --  attributes cannot be written in one.
-function GT:BuildWorld()
-	local p = self.panel
-	if not p or p.worldWells or self.fighting or InCombatLockdown() then return end
-	p.worldWells = {}
-	for slot = 1, MARKERS do
-		p.worldWells[slot] = BuildWorldWell(p.worldBox, WORLD_ORDER[slot], MARKERS + 1 - slot)
-	end
-	p.worldClear = BuildWorldWell(p.worldBox, nil, nil)
-	p.worldClear:SetWidth(WELL * 2 + WELL_GAP)
-	self:PlaceWorld(true)
+function GT:BuildGrid(key)
+	local p, g = self.panel, GRIDS[key]
+	if not p or p[g.wells] or self.fighting or InCombatLockdown() then return end
+	local wells = {}
+	for slot = 1, MARKERS do wells[slot] = g.make(p, slot) end
+	p[g.wells] = wells
+	p[g.clear] = g.makeClear(p)
+	p[g.clear]:SetWidth(WELL * 2 + WELL_GAP)
+	self:PlaceGrid(key, true)
 end
 
---- In the panel, laid out as the mark grid; or out of it, parked.
+--- In the panel, laid out as the grid; or out of it, parked.
 --
 --  OUT AS A FIGHT STARTS, so the branch carries nothing protected and can
 --  still open, close and change height in one. Parent AND anchors: a frame
@@ -525,31 +527,35 @@ end
 --  PLAYER_REGEN_DISABLED is handled, the last moment a secure frame moves;
 --  on Forever InCombatLockdown already says true there, so the handler's
 --  own flag decides, not that (memory: combat-start-window).
-function GT:PlaceWorld(home)
-	local p = self.panel
-	if not (p and p.worldWells) then return end
+function GT:PlaceGrid(key, home)
+	local p, g = self.panel, GRIDS[key]
+	if not (p and p[g.wells]) then return end
 	if not self.park then
 		self.park = CreateFrame("Frame", nil, UIParent)
 		self.park:Hide()
 	end
-	local host = home and p.worldBox or self.park
-	local all = { p.worldClear }
-	for _, b in ipairs(p.worldWells) do all[#all + 1] = b end
+	local box = p[g.box]
+	local host = home and box or self.park
+	local all = { p[g.clear] }
+	for _, b in ipairs(p[g.wells]) do all[#all + 1] = b end
 	for _, b in ipairs(all) do
 		b:ClearAllPoints()
 		b:SetParent(host)
 	end
 	if home then
-		for slot, b in ipairs(p.worldWells) do
+		for slot, b in ipairs(p[g.wells]) do
 			local col, row = (slot - 1) % 5, math.floor((slot - 1) / 5)
-			b:SetPoint("TOPLEFT", p.worldBox, "TOPLEFT",
+			b:SetPoint("TOPLEFT", box, "TOPLEFT",
 				col * (WELL + WELL_GAP), -HEAD_H - row * (WELL + WELL_GAP))
 		end
-		p.worldClear:SetPoint("TOPLEFT", p.worldBox, "TOPLEFT",
+		p[g.clear]:SetPoint("TOPLEFT", box, "TOPLEFT",
 			3 * (WELL + WELL_GAP), -HEAD_H - (WELL + WELL_GAP))
 	end
-	p.worldHome = home
+	p[g.home] = home
 end
+
+function GT:BuildWorld() return self:BuildGrid("world") end
+function GT:PlaceWorld(home) return self:PlaceGrid("world", home) end
 
 --- Everything about the panel that can change while it is open.
 --
@@ -585,40 +591,40 @@ function GT:RefreshPanel()
 		y = y + ROLE_H + 8
 	end
 
-	-- The marks: anyone's in a party, an officer's in a raid.
+	-- The marks: anyone's in a party, an officer's in a raid. Secure, so
+	-- never in a fight (they are parked then), like the world markers.
 	local marks = officer or not raid
-	p.markBox:SetShown(marks)
-	p.marks:SetShown(marks)
-	p.clear:SetShown(marks)
-	for _, b in ipairs(p.wells) do b:SetShown(marks) end
-	if marks then
+	if marks and not self.fighting and not InCombatLockdown() then
+		self:BuildGrid("marks")
+		if p.wells and not p.marksHome then self:PlaceGrid("marks", true) end
+	end
+	local showMarks = marks and p.wells ~= nil and p.marksHome and true or false
+	p.markBox:SetShown(showMarks)
+	p.marks:SetShown(showMarks)
+	if showMarks then
 		p.markBox:ClearAllPoints()
 		p.markBox:SetPoint("TOPLEFT", p, "TOPLEFT", PANEL_PAD, -y)
 		y = y + HEAD_H + 2 * (WELL + WELL_GAP) + 8
-	end
 
-	-- THE WELLS FOLLOW YOUR TARGET, not the party. Inert with nothing
-	-- targeted, because SetRaidTarget has no unit to act on - and a well that
-	-- looks pressable and does nothing is the worse of the two.
-	local hasTarget = UnitExists and UnitExists("target")
-	local on = hasTarget and GetRaidTargetIndex and GetRaidTargetIndex("target")
-	-- A SECRET MARK RINGS NO WELL. Which well it matches is a comparison, and
-	-- a secret cannot be compared; the wells still set marks.
-	if A.IsSecret(on) then on = nil end
-	-- THE DIM GOES ON LAST. A well IS its own glass surface, so
-	-- W.SetButtonState writes its alpha too - setting the dim first and the
-	-- state second put every well straight back to full, and the grid looked
-	-- ready when there was nothing to mark.
-	-- b.index, not the slot: the grid is laid out highest-first, so the two
-	-- are opposites and comparing the wrong one rings the wrong well.
-	for _, b in ipairs(p.wells) do
-		b.__on = (on == b.index)
-		W.SetButtonState(b, b.__on, false)
-		b:EnableMouse(hasTarget and true or false)
-		b:SetAlpha(hasTarget and 1 or 0.4)
+		-- THE WELLS FOLLOW YOUR TARGET, not the party. Inert with nothing
+		-- targeted - a well that looks pressable and does nothing is the
+		-- worse of the two. Only touched while home: out of a fight.
+		local hasTarget = UnitExists and UnitExists("target")
+		local on = hasTarget and GetRaidTargetIndex and GetRaidTargetIndex("target")
+		-- A SECRET MARK RINGS NO WELL. Which well it matches is a comparison,
+		-- and a secret cannot be compared; the wells still set marks.
+		if A.IsSecret(on) then on = nil end
+		-- THE DIM GOES ON LAST: W.SetButtonState writes the alpha too.
+		-- b.index, not the slot: the grid is laid out highest-first.
+		for _, b in ipairs(p.wells) do
+			b.__on = (on == b.index)
+			W.SetButtonState(b, b.__on, false)
+			b:EnableMouse(hasTarget and true or false)
+			b:SetAlpha(hasTarget and 1 or 0.4)
+		end
+		p.clear:SetAlpha(hasTarget and 1 or 0.4)
+		p.clear:EnableMouse(hasTarget and true or false)
 	end
-	p.clear:SetAlpha(hasTarget and 1 or 0.4)
-	p.clear:EnableMouse(hasTarget and true or false)
 
 	-- THE WORLD MARKERS: whoever has the marks, where the client has world
 	-- markers, and never in a fight (they are parked then).
@@ -709,6 +715,7 @@ function GT:RegisterEvents()
 	-- reads: on Forever the lockdown already reports on as this runs.
 	A:RegisterEvent(self, "PLAYER_REGEN_DISABLED", function()
 		GT.fighting = true
+		GT:PlaceGrid("marks", false)
 		GT:PlaceWorld(false)
 		GT:RefreshPanel()
 	end)

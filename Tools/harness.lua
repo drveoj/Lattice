@@ -3273,6 +3273,20 @@ SECURE_ACTIONS.togglemenu = function(self, unit)
 	if which then UnitPopup_OpenMenu(which, { unit = unit }) end
 end
 
+--- SecureTemplates.lua:582-603, the target-mark action.
+SECURE_ACTIONS.raidtarget = function(self, unit)
+	local marker = tonumber(self:GetAttribute("marker")) or 1
+	local action = self:GetAttribute("action") or "toggle"
+	unit = unit or "target"
+	if action == "set" and GetRaidTargetIndex(unit) ~= marker then
+		SetRaidTarget(unit, marker)
+	elseif action == "clear" then
+		SetRaidTarget(unit, 0)
+	elseif action == "toggle" then
+		SetRaidTarget(unit, GetRaidTargetIndex(unit) == marker and 0 or marker)
+	end
+end
+
 --- Right-click, the way the secure handler does it: through the attributes,
 --  never through a reference the caller happened to keep. A reference is
 --  exactly what the broken version also had.
@@ -3280,6 +3294,20 @@ function _G.__rightClick(button)
 	local action = SECURE_ACTIONS[button:GetAttribute("*type2") or ""]
 	if not action then return false end
 	action(button, button:GetAttribute("unit"))
+	return true
+end
+
+--- Left-click on a secure button: its "type" action, run untainted, then
+--  the button's own (hooked) OnClick. Does nothing with the mouse off.
+function _G.__leftClick(button)
+	if button.IsMouseEnabled and not button:IsMouseEnabled() then return false end
+	local action = SECURE_ACTIONS[button:GetAttribute("type1") or button:GetAttribute("type") or ""]
+	if not action then return false end
+	_G.__secureRun = true
+	action(button, button:GetAttribute("unit"))
+	_G.__secureRun = false
+	local h = button:GetScript("OnClick")
+	if h then h(button, "LeftButton") end
 	return true
 end
 
@@ -5972,7 +6000,15 @@ function GetRaidTargetIndex(u) return _G.__raidTargets[u] end
 --  index) and leaving it out is an error, not a clear - so a Clear button
 --  that passed nothing would raise rather than quietly leaving the mark, and
 --  a mock that folded nil into 0 would call that correct.
+--  PROTECTED on both clients (HasRestrictions; Forever's docs add
+--  AllowedWhenUntainted). From an addon's own Lua the client refuses it with
+--  ADDON_ACTION_FORBIDDEN (Joe, 2026-11-26), so it only works from a secure
+--  button: __leftClick runs it with __secureRun set.
 function SetRaidTarget(u, index)
+	if not _G.__secureRun then
+		fail("SetRaidTarget called from addon code - the client forbids it")
+		return
+	end
 	_G.__partyCalls.marks = _G.__partyCalls.marks + 1
 	if type(index) ~= "number" then
 		fail("SetRaidTarget(unit, index) needs an index - got " .. tostring(index))
@@ -10156,6 +10192,19 @@ do
 	fire("PLAYER_FLAGS_CHANGED", "party1")
 	check(A.Fader.state == "awake", "somebody else going away is not our business")
 
+	-- SECRET IN AN INSTANCE on Forever: counts as not away, and no error on
+	-- the fader's tick (it threw on every one, Joe 2026-11-26).
+	if _G.__flavour == "camelot" then
+		A.lastFailure = nil
+		_G.__units.player.afk = _G.__SecretStandIn()
+		fire("PLAYER_FLAGS_CHANGED", "player")
+		tick(0.1)
+		check(A.lastFailure == nil and A.Fader.state ~= "zen",
+			"a secret AFK flag is read as not away, without an error ("
+			.. tostring(A.lastFailure) .. ")")
+		_G.__units.player.afk = false
+	end
+
 	-- combat is a hard block, and leaving zen in combat must not reach for Hide
 	_G.__units.player.afk = true
 	fire("PLAYER_FLAGS_CHANGED", "player")
@@ -12898,7 +12947,8 @@ section("group tools: the Toolbox runs the group, Blizzard's tab otherwise", fun
 		end
 	end
 	check(not offered("ready") and not offered("countdown") and not offered("roles")
-		and not GT.panel.markBox:IsShown() and not GT.panel.wells[1]:IsShown()
+		and not GT.panel.markBox:IsShown()
+		and not (GT.panel.wells and GT.panel.wells[1]:IsVisible())
 		and not GT.panel.worldBox:IsShown(),
 		"a plain raid member gets no marks, world markers, ready check, countdown or role check")
 	_G.__assistants.player = true
@@ -36999,7 +37049,8 @@ section("party controls: the marks go on your target", function()
 			"out of a fight it carries the secure world markers")
 		_G.__inCombat = true
 		check(not p:IsProtected() and p.worldWells[1]:GetParent() ~= p.worldBox
-			and p.worldWells[1]:GetNumPoints() == 0,
+			and p.worldWells[1]:GetNumPoints() == 0
+			and p.wells[1]:GetParent() ~= p.markBox and p.wells[1]:GetNumPoints() == 0,
 			"and in one nothing protected hangs from it, so it opens and shuts in a fight")
 		-- The fight's first event shut it, as it shuts every open transient
 		-- branch (Trunk SetQuiet); it opens again in the fight.
@@ -37043,7 +37094,7 @@ section("party controls: the marks go on your target", function()
 	_G.__units.target.exists = false
 	GT:RefreshPanel()
 	local before = _G.__partyCalls.marks
-	p.wells[1]:GetScript("OnClick")(p.wells[1])
+	_G.__leftClick(p.wells[1])
 	check(_G.__partyCalls.marks == before,
 		"with no target, pressing a mark asks the client for nothing")
 	check(p.wells[1]:GetAlpha() < 1,
@@ -37063,7 +37114,11 @@ section("party controls: the marks go on your target", function()
 		tostring(p.wells[1].index) .. ")")
 	check(p.wells[8].index == 1, "and the star is the last")
 
-	p.wells[1]:GetScript("OnClick")(p.wells[1])
+	-- THROUGH THE SECURE ACTION: SetRaidTarget is refused from addon code.
+	check(p.wells[1]:IsProtected() and p.wells[1]:GetAttribute("type") == "raidtarget"
+		and p.wells[1]:GetAttribute("marker") == "8" and p.wells[1]:GetAttribute("action") == "set",
+		"each mark well is a secure raidtarget button")
+	_G.__leftClick(p.wells[1])
 	check(GetRaidTargetIndex("target") == 8,
 		"pressing a well sets the mark it SHOWS (" ..
 		tostring(GetRaidTargetIndex("target")) .. ")")
@@ -37075,7 +37130,7 @@ section("party controls: the marks go on your target", function()
 
 	-- CLEAR IS INDEX 0, not a missing argument. SetRaidTarget with nothing
 	-- passed leaves the mark exactly where it was.
-	p.clear:GetScript("OnClick")(p.clear)
+	_G.__leftClick(p.clear)
 	check(GetRaidTargetIndex("target") == nil,
 		"Clear takes it off (" .. tostring(GetRaidTargetIndex("target")) .. ")")
 
