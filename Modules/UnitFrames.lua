@@ -88,7 +88,7 @@ function UF:HideBlizzard()
 		"EvokerEbonMightBar", "DemonHunterSoulFragmentsBar" }) do
 		local f = _G[n]
 		if f and f.UnregisterAllEvents and not InCombatLockdown() then
-			pcall(f.UnregisterAllEvents, f)
+			f:UnregisterAllEvents()
 		end
 	end
 end
@@ -715,8 +715,9 @@ end
 --- Dead is dead, whatever the last health event said.
 local function IsDead(unit)
 	if UnitIsDeadOrGhost then
-		local ok, dead = pcall(UnitIsDeadOrGhost, unit)
-		if ok then return dead and true or false end
+		local dead = UnitIsDeadOrGhost(unit)
+		if A.IsSecret(dead) then return false end
+		return dead and true or false
 	end
 	if UnitIsDead and UnitIsDead(unit) then return true end
 	if UnitIsGhost and UnitIsGhost(unit) then return true end
@@ -840,8 +841,8 @@ end
 local function PetHappiness()
 	local fn = (C_PetInfo and C_PetInfo.GetPetHappiness) or _G.GetPetHappiness
 	if not fn then return nil end
-	local ok, happiness = pcall(fn)
-	if not ok then return nil end
+	local happiness = fn()
+	if A.IsSecret(happiness) then return nil end
 	return happiness
 end
 
@@ -1122,7 +1123,8 @@ local function Countdown(f, duration)
 		local b = C_DurationUtil.CreateDurationTextBinding()
 		local fmt = C_StringUtil and C_StringUtil.CreateNumericRuleFormatter
 			and C_StringUtil.CreateNumericRuleFormatter()
-		if fmt and pcall(fmt.SetBreakpoints, fmt, { { threshold = 0, format = "%.1f" } }) then
+		if fmt then
+			fmt:SetBreakpoints({ { threshold = 0, format = "%.1f" } })
 			b:SetFormatter(fmt)
 		end
 		b:SetZeroDurationText("")
@@ -1492,7 +1494,7 @@ function UF:RegisterEvents()
 			}) do
 				-- CallbackHandler embeds RegisterCallback with the *target* as the
 				-- first argument: lib.RegisterCallback(target, event, handler).
-				pcall(LibCC.RegisterCallback, UF, e, relay)
+				LibCC.RegisterCallback(UF, e, relay)
 			end
 		end
 	end
