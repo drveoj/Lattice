@@ -193,8 +193,8 @@ local function cfg() return A.Config:Module("tooltips") end
 local function Commas(n)
 	n = math.floor(tonumber(n) or 0)
 	if _G.BreakUpLargeNumbers then
-		local ok, v = pcall(_G.BreakUpLargeNumbers, n)
-		if ok and type(v) == "string" then return v end
+		local v = _G.BreakUpLargeNumbers(n)
+		if type(v) == "string" then return v end
 	end
 	local s = tostring(n)
 	local out = (s:reverse():gsub("(%d%d%d)", "%1,"):reverse())
@@ -387,8 +387,8 @@ end
 --- Classification -> the chip's label, or nil for an ordinary mob.
 local function ClassificationChip(unit)
 	if not unit or not UnitExists(unit) then return nil end
-	local ok, class = pcall(UnitClassification, unit)
-	if not ok or not class then return nil end
+	local class = UnitClassification(unit)
+	if not class or A.IsSecret(class) then return nil end
 
 	-- Deliberately NOT uppercased. string.upper in this client is ASCII-only,
 	-- so uppercasing a localized string leaves accented letters lowercase and
@@ -446,13 +446,11 @@ end
 local function ApplyScale(tip)
 	if not tip or not tip.SetScale then return end
 	local want = WantScale()
-	if tip.GetScale then
-		local ok, has = pcall(tip.GetScale, tip)
-		-- Only when it has actually moved. SetScale re-lays out everything
-		-- anchored to the frame, and this runs on every tooltip show.
-		if ok and has and math.abs(has - want) < 0.001 then return end
-	end
-	pcall(tip.SetScale, tip, want)
+	-- Only when it has actually moved. SetScale re-lays out everything
+	-- anchored to the frame, and this runs on every tooltip show.
+	local has = tip.GetScale and tip:GetScale()
+	if has and math.abs(has - want) < 0.001 then return end
+	tip:SetScale(want)
 end
 
 local function StripArt(tip)
@@ -461,8 +459,8 @@ local function StripArt(tip)
 		if ns.SetAlpha then ns:SetAlpha(0) end
 		if ns.Hide then ns:Hide() end
 	end
-	if tip.SetBackdropColor then pcall(tip.SetBackdropColor, tip, 0, 0, 0, 0) end
-	if tip.SetBackdropBorderColor then pcall(tip.SetBackdropBorderColor, tip, 0, 0, 0, 0) end
+	if tip.SetBackdropColor then tip:SetBackdropColor(0, 0, 0, 0) end
+	if tip.SetBackdropBorderColor then tip:SetBackdropBorderColor(0, 0, 0, 0) end
 	-- The two decorative overlays SharedTooltip_SetBackdropStyle also drives.
 	for _, key in ipairs({ "TopOverlay", "BottomOverlay" }) do
 		local o = tip[key]
@@ -538,7 +536,7 @@ local function ResetCard(tip)
 		-- The running maximum goes with it. Without this the widest unit you
 		-- ever moused over sets the floor for every tooltip after it.
 		tip.aetherWantW = nil
-		pcall(tip.SetMinimumWidth, tip, 0)
+		tip:SetMinimumWidth(0)
 		tip.aetherMinWidth = nil
 	end
 
@@ -761,7 +759,7 @@ function TT:UpdateStatusBar(bar)
 		-- wants more should win rather than whichever ran last.
 		local want = math.max(need, tip.aetherWantW or 0)
 		tip.aetherWantW = want
-		pcall(tip.SetMinimumWidth, tip, math.min(want, 420))
+		tip:SetMinimumWidth(math.min(want, 420))
 		tip.aetherMinWidth = true
 	end
 end
@@ -884,8 +882,8 @@ function TT:OnUnit(tip)
 	-- Blizzard drew it rather than throwing a second error.
 	local unit
 	if tip.GetUnit then
-		local ok, _, u = pcall(tip.GetUnit, tip)
-		if ok and not A.IsSecret(u) then unit = u end
+		local _, u = tip:GetUnit()
+		if not A.IsSecret(u) then unit = u end
 	end
 	if not unit and tip.IsUnit then
 		local over = tip:IsUnit("mouseover")
@@ -1006,7 +1004,7 @@ function TT:OnUnit(tip)
 			-- requirements do not overwrite each other turn about.
 			want = math.max(want, tip.aetherWantW or 0)
 			tip.aetherWantW = want
-			pcall(tip.SetMinimumWidth, tip, math.min(want, 420))
+			tip:SetMinimumWidth(math.min(want, 420))
 			tip.aetherMinWidth = true
 		end
 
@@ -1032,10 +1030,10 @@ end
 --  less direct, but it needs no API at all.
 local function ItemQuality(tip)
 	if tip.GetItem then
-		local ok, _, link = pcall(tip.GetItem, tip)
-		if ok and link and GetItemInfo then
-			local ok2, _, _, q = pcall(GetItemInfo, link)
-			if ok2 and q then return q end
+		local _, link = tip:GetItem()
+		if type(link) == "string" and not A.IsSecret(link) and GetItemInfo then
+			local _, _, q = GetItemInfo(link)
+			if q then return q end
 		end
 	end
 
@@ -1137,12 +1135,10 @@ function TT:ApplyFonts()
 			-- the game in Outfit until a reload - a switch that appears to do
 			-- nothing, which is worse than one that is not there.
 			if not obj.__aetherFont and obj.GetFont then
-				local ok, p, s, f = pcall(obj.GetFont, obj)
-				if ok and p then obj.__aetherFont = { p, s, f } end
+				local p, s, f = obj:GetFont()
+				if p then obj.__aetherFont = { p, s, f } end
 			end
-			-- pcall: a font object is not a FontString, and a client that refuses
-			-- the TTF here should cost us the typeface, not the module.
-			pcall(Media.SetFont, Media, obj, pair[2])
+			Media:SetFont(obj, pair[2])
 		end
 	end
 end
@@ -1151,7 +1147,7 @@ function TT:RestoreFonts()
 	for _, pair in ipairs(FONT_OBJECTS) do
 		local obj = _G[pair[1]]
 		local saved = obj and obj.__aetherFont
-		if saved then pcall(obj.SetFont, obj, saved[1], saved[2], saved[3]) end
+		if saved then obj:SetFont(saved[1], saved[2], saved[3]) end
 	end
 end
 
@@ -1328,25 +1324,21 @@ function TT:InstallHooks()
 	if _G.GameTooltip_ShowStatusBar then
 		hooksecurefunc("GameTooltip_ShowStatusBar", function(tip)
 			if not TT.enabled or not tip or not tip.statusBarPool then return end
-			-- pcall around the ENUMERATION, not around each bar: the pool object
-			-- is Blizzard's and EnumerateActive is not attested anywhere in the
-			-- Classic source, so this may be a nil call rather than a loop. A
-			-- pooled bar we never reach is a slightly wrong-looking progress bar;
-			-- an error here would be thrown from inside the client's own tooltip
-			-- code, every time one appeared.
-			pcall(function()
-				for bar in tip.statusBarPool:EnumerateActive() do
-					if not bar.aetherStyled then
-						bar.aetherStyled = true
-						if bar.SetStatusBarTexture then
-							bar:SetStatusBarTexture(Media.texture.bar)
-						end
-						local h = Palette.c.ttHealth
-						local tex = bar.GetStatusBarTexture and bar:GetStatusBarTexture()
-						if tex then W.SetGradient(tex, "HORIZONTAL", h[1], h[2]) end
+			-- EnumerateActive is not attested in the Classic source, so it is
+			-- asked for rather than assumed (it was a pcall).
+			local pool = tip.statusBarPool
+			if not pool.EnumerateActive then return end
+			for bar in pool:EnumerateActive() do
+				if not bar.aetherStyled then
+					bar.aetherStyled = true
+					if bar.SetStatusBarTexture then
+						bar:SetStatusBarTexture(Media.texture.bar)
 					end
+					local h = Palette.c.ttHealth
+					local tex = bar.GetStatusBarTexture and bar:GetStatusBarTexture()
+					if tex then W.SetGradient(tex, "HORIZONTAL", h[1], h[2]) end
 				end
-			end)
+			end
 		end)
 	end
 
