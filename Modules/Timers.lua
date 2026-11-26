@@ -90,7 +90,7 @@ end
 local function RestoreBlizzard()
 	local box = _G.MirrorTimerContainer
 	if box and box.ShouldShow and box.SetShown then
-		pcall(function() box:SetShown(box:ShouldShow()) end)
+		box:SetShown(box:ShouldShow())
 	end
 	for i = 1, NumSlots() do
 		local f = _G["MirrorTimer" .. i]
@@ -226,8 +226,8 @@ end
 local function Refresh(t)
 	if t.paused then return end
 	if GetMirrorTimerProgress then
-		local ok, ms = pcall(GetMirrorTimerProgress, t.kind)
-		if ok and type(ms) == "number" then t.remain = ms end
+		local ms = GetMirrorTimerProgress(t.kind)
+		if type(ms) == "number" and not A.IsSecret(ms) then t.remain = ms end
 	end
 end
 
@@ -277,8 +277,8 @@ end
 function TM:Scan()
 	if not GetMirrorTimerInfo then return end
 	for i = 1, NumSlots() do
-		local ok, kind, value, maxvalue, _, paused, label = pcall(GetMirrorTimerInfo, i)
-		if ok and kind and kind ~= "UNKNOWN" then
+		local kind, value, maxvalue, _, paused, label = GetMirrorTimerInfo(i)
+		if kind and not A.IsSecret(kind, value, maxvalue, label) and kind ~= "UNKNOWN" then
 			self:Start(kind, value, maxvalue, paused, label)
 		end
 	end
