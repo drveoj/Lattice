@@ -204,15 +204,12 @@ local TANK_SPELLS = {
 
 --- A spell's name, under whichever API this client has.
 local function SpellName(id)
+	if type(id) ~= "number" then return nil end
 	if C_Spell and C_Spell.GetSpellInfo then
-		local ok, info = pcall(C_Spell.GetSpellInfo, id)
-		return ok and info and info.name or nil
+		local info = C_Spell.GetSpellInfo(id)
+		return info and info.name or nil
 	end
-	if GetSpellInfo then
-		local ok, name = pcall(GetSpellInfo, id)
-		return ok and name or nil
-	end
-	return nil
+	return GetSpellInfo and GetSpellInfo(id) or nil
 end
 
 --- Is this unit wearing one of them?
@@ -348,8 +345,8 @@ local function Reads(unit, mob)
 	if not (unit and mob) or type(UnitDetailedThreatSituation) ~= "function" then
 		return false
 	end
-	local ok, _, _, scaled = pcall(UnitDetailedThreatSituation, unit, mob)
-	if not ok or A.IsSecret(scaled) then return false end
+	local _, _, scaled = UnitDetailedThreatSituation(unit, mob)
+	if A.IsSecret(scaled) then return false end
 	return scaled ~= nil
 end
 
@@ -361,9 +358,7 @@ local function Read(unit, mob)
 	if not (unit and mob) or type(UnitDetailedThreatSituation) ~= "function" then
 		return nil
 	end
-	local ok, tanking, status, scaled, raw, threat =
-		pcall(UnitDetailedThreatSituation, unit, mob)
-	if not ok then return nil end
+	local tanking, status, scaled, raw, threat = UnitDetailedThreatSituation(unit, mob)
 	-- SECRET THREAT IS NO READING. WoW Forever hides all five values together
 	-- (SecretWhenUnitThreatValuesRestricted), and `tanking and true` threw at
 	-- this line on 2026-09-23. Everything this module does with them is a test
@@ -483,8 +478,9 @@ end
 --- How far ahead of the runner-up a holder is, as a percentage.
 local function Lead(unit, mob)
 	if type(UnitThreatPercentageOfLead) ~= "function" then return nil end
-	local ok, pct = pcall(UnitThreatPercentageOfLead, unit, mob)
-	if not ok or A.IsSecret(pct) then return nil end
+	if not (unit and mob) then return nil end
+	local pct = UnitThreatPercentageOfLead(unit, mob)
+	if A.IsSecret(pct) then return nil end
 	return pct
 end
 
@@ -586,8 +582,9 @@ function TH:Unsubscribe(fn) self.watchers[fn] = nil end
 
 local function Announce(unit, r)
 	for fn in pairs(TH.watchers) do
-		local ok, err = pcall(fn, unit, r)
-		if not ok then A:Debug("threat watcher:", err) end
+		-- Reported, not debug-only: a watcher that breaks was invisible.
+		local ok, err = xpcall(fn, A.Trace, unit, r)
+		if not ok then A:Caught("threat watcher", err) end
 	end
 end
 
@@ -1028,7 +1025,7 @@ function TH:Alarm()
 
 	A.Widgets.ScreenFlash(A.Palette.c.danger)
 	if PlaySound and SOUNDKIT and SOUNDKIT.RAID_WARNING then
-		pcall(PlaySound, SOUNDKIT.RAID_WARNING, "Master")
+		PlaySound(SOUNDKIT.RAID_WARNING, "Master")
 	end
 end
 
